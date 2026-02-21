@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Chatbot 🍜</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .chat-container {
+            width: 450px;
+            height: 650px;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chat-header {
+            background-color: #ff6b6b;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #fffdf7;
+            display: flex;
+            flex-direction: column;
+        }
+        .message {
+            margin-bottom: 15px;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+            white-space: pre-wrap; 
+        }
+        .user-message {
+            background-color: #4ecdc4;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+        .bot-message {
+            background-color: #eeeeee;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+        .input-area {
+            display: flex;
+            padding: 20px;
+            background-color: #fff;
+            border-top: 1px solid #eee;
+        }
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 25px;
+            outline: none;
+            margin-right: 10px;
+            font-family: inherit;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #ff5252; }
+        .typing-indicator {
+            font-style: italic;
+            color: #aaa;
+            font-size: 0.8rem;
+            margin: 0 0 15px 15px;
+            display: none; 
+            align-self: flex-start;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="chat-header">🍜 Food Chatbot</div>
+    <div class="chat-messages" id="chat-box">
+        <div class="message bot-message">Eh hello! I am your Food Chatbot. Hungry already is it? Looking for makan recommendation or want to tell me your preferences?</div>
+        <div class="typing-indicator" id="typing">Chatbot is typing...</div>
+    </div>
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Type your message..." onkeypress="handleEnter(event)" autocomplete="off">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+    async function sendMessage() {
+        const inputField = document.getElementById("user-input");
+        const message = inputField.value.trim();
+        const chatBox = document.getElementById("chat-box");
+        const typingIndicator = document.getElementById("typing");
+
+        if (message === "") return;
+
+        appendMessage(message, "user-message");
+        inputField.value = ""; 
+
+        chatBox.appendChild(typingIndicator);
+        typingIndicator.style.display = "block";
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        try {
+            const response = await fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: message })
+            });
+            
+            const data = await response.json();
+            typingIndicator.style.display = "none";
+            appendMessage(data.reply, "bot-message");
+
+        } catch (error) {
+            typingIndicator.style.display = "none";
+            appendMessage("Error: Could not connect to chatbot server.", "bot-message");
+        }
+    }
+
+    function appendMessage(text, className) {
+        const chatBox = document.getElementById("chat-box");
+        const msgDiv = document.createElement("div");
+        msgDiv.classList.add("message", className);
+        msgDiv.innerText = text; 
+        
+        const typingIndicator = document.getElementById("typing");
+        chatBox.insertBefore(msgDiv, typingIndicator);
+        chatBox.scrollTop = chatBox.scrollHeight; 
+    }
+
+    function handleEnter(event) {
+        if (event.key === "Enter") {
+            sendMessage();
+        }
+    }
+</script>
+</body>
+</html>

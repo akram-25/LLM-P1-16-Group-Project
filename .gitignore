@@ -1,0 +1,29 @@
+# --- Secrets and Environment Variables ---
+.env
+apikeys.env
+*.env
+secrets.json
+
+# --- Python Environment ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+build/
+dist/
+
+# --- Jupyter Notebooks ---
+.ipynb_checkpoints
+
+# --- Data and Vector Stores ---
+# Ignore local vector DB folders (e.g., ChromaDB, FAISS indexes)
+data/
+db/
+*.index
+*.pkl
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db

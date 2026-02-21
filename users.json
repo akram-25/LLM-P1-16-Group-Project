@@ -1,0 +1,19 @@
+{
+    "Akram": {
+        "name": [
+            "jack",
+            "tom"
+        ],
+        "allergy": [
+            "seafood",
+            "french food"
+        ],
+        "diet": [
+            "no italian food",
+            "no german food",
+            "love italian",
+            "no italian",
+            "seafood"
+        ]
+    }
+}
