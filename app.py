@@ -30,8 +30,11 @@ def chat():
         if intent == "SEARCH":
             search_query = decision.get("keywords", user_input)
             
+            # Load the user profile from users.json to apply metadata filters
+            user_profile = bot.load_user_profile("Akram")
+            
             # --- USING THE SELF-RAG REFLECTION SEARCH ---
-            db_results = bot.reflective_search(user_input, search_query)
+            db_results = bot.reflective_search(user_input, search_query, user_profile)
             
             bot_reply = bot.generate_response_with_history(user_input, chat_history, db_results)
             

@@ -42,7 +42,6 @@ embedding_fn = OpenAIEmbeddings(
     openai_api_key=os.getenv('OPENAI_API_KEY')
 )
 
-# NOTE: We keep "foodkaki_restaurants" here so it still connects to the existing DB
 vector_db = Chroma(
     client=chroma_auth_client,
     collection_name="foodkaki_restaurants",
@@ -154,11 +153,23 @@ def get_intent(user_query):
 # ==========================================
 # 4. CORE FUNCTIONS (RAG, Reflection & Generation)
 # ==========================================
-def search_cloud_db(query_text):
+def search_cloud_db(query_text, user_profile=None):
     if not vector_db:
         return []
+        
+    search_filter = {}
+    
+    if user_profile:
+        if "diet" in user_profile and len(user_profile["diet"]) > 0:
+            search_filter["diet"] = user_profile["diet"][0].lower()
+
     try:
-        results = vector_db.similarity_search(query_text, k=4)
+        if search_filter:
+            print(f"   ⚙️ [Filter] Applying strict rules: {search_filter}")
+            results = vector_db.similarity_search(query_text, k=4, filter=search_filter)
+        else:
+            results = vector_db.similarity_search(query_text, k=4)
+            
         clean_results = []
         for doc in results:
             info = {
@@ -172,9 +183,9 @@ def search_cloud_db(query_text):
         print(f"   ❌ DB Search Failed: {e}")
         return []
 
-def reflective_search(user_input, initial_keywords):
+def reflective_search(user_input, initial_keywords, user_profile=None):
     print(f"   🔎 [Agent] Searching Cloud DB for: '{initial_keywords}'...")
-    results = search_cloud_db(initial_keywords)
+    results = search_cloud_db(initial_keywords, user_profile)
     
     context_str = ""
     if results:
@@ -201,7 +212,7 @@ def reflective_search(user_input, initial_keywords):
         else:
             new_query = grade.get("improved_query", initial_keywords)
             print(f"   🔄 [Reflection] Results poor. Retrying DB search with: '{new_query}'")
-            return search_cloud_db(new_query)
+            return search_cloud_db(new_query, user_profile)
             
     except Exception as e:
         print(f"   ⚠️ [Grader Error] {e}. Falling back to first attempt.")
