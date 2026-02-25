@@ -218,10 +218,9 @@ def reflective_search(user_input, initial_keywords, user_profile=None):
         print(f"   ⚠️ [Grader Error] {e}. Falling back to first attempt.")
         return results
 
-def generate_response_with_history(new_user_input, chat_history, context_data=None):
+def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
     
-    user_profile = load_user_profile("Akram") 
     if user_profile:
         prefs_str = f"IMPORTANT - User Preferences: {json.dumps(user_profile)}"
         messages.append({"role": "system", "content": prefs_str})

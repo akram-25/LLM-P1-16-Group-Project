@@ -1,71 +1,256 @@
-from flask import Flask, render_template, request, jsonify
+import os
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import chatbot_main as bot
+import db
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
-# Global chat history
-chat_history = []
+# Initialize database schema on startup
+try:
+    db.init_db()
+except Exception as e:
+    print(f"⚠️ Could not initialize database: {e}")
 
+
+# ==========================================
+# AUTH ROUTES
+# ==========================================
+@app.route("/login")
+def login_page():
+    # If already logged in, go to chat
+    if session.get("user_id"):
+        return redirect(url_for("home"))
+    return render_template("login.html")
+
+
+@app.route("/auth/register", methods=["POST"])
+def register():
+    data = request.json
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not username or not email or not password:
+        return jsonify({"success": False, "error": "All fields are required"})
+
+    if len(password) < 6:
+        return jsonify({"success": False, "error": "Password must be at least 6 characters"})
+
+    user, error = db.register_user(username, email, password)
+
+    if error:
+        return jsonify({"success": False, "error": error})
+
+    # Auto-login after registration
+    session["user_id"] = user["user_id"]
+    session["username"] = user["username"]
+    session["new_user"] = True
+    return jsonify({"success": True, "username": user["username"], "new_user": True})
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.json
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+
+    if not username or not password:
+        return jsonify({"success": False, "error": "Username and password are required"})
+
+    user, error = db.login_user(username, password)
+
+    if error:
+        return jsonify({"success": False, "error": error})
+
+    session["user_id"] = user["user_id"]
+    session["username"] = user["username"]
+    return jsonify({"success": True, "username": user["username"]})
+
+
+@app.route("/auth/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+
+@app.route("/auth/me")
+def auth_me():
+    """Return current logged-in user info."""
+    if session.get("user_id"):
+        return jsonify({
+            "logged_in": True,
+            "username": session["username"],
+            "user_id": session["user_id"]
+        })
+    return jsonify({"logged_in": False})
+
+
+# ==========================================
+# GUEST MODE
+# ==========================================
+@app.route("/chat/guest")
+def guest_mode():
+    session["user_id"] = "guest"
+    session["username"] = "Guest"
+    return redirect(url_for("home"))
+
+
+# ==========================================
+# SETTINGS / PREFERENCES
+# ==========================================
+@app.route("/settings")
+def settings_page():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    if session.get("user_id") == "guest":
+        return redirect(url_for("home"))
+    return render_template("settings.html")
+
+
+@app.route("/settings/data")
+def settings_data():
+    """Return current user preferences as JSON."""
+    user_id = session.get("user_id")
+    if not user_id or user_id == "guest":
+        return jsonify({"preferences": {}})
+    prefs = db.get_preferences(user_id)
+    return jsonify({"preferences": prefs})
+
+
+@app.route("/settings/save", methods=["POST"])
+def settings_save():
+    """Save/replace all user preferences."""
+    user_id = session.get("user_id")
+    if not user_id or user_id == "guest":
+        return jsonify({"success": False, "error": "Not logged in"})
+
+    data = request.json
+    prefs = data.get("preferences", {})
+
+    db.save_preferences_bulk(user_id, prefs)
+    db.set_onboarding_complete(user_id)
+
+    # Clear the new_user flag
+    session.pop("new_user", None)
+
+    return jsonify({"success": True})
+
+
+# ==========================================
+# MAIN CHAT ROUTES
+# ==========================================
 @app.route("/")
 def home():
+    # Require login (or guest mode)
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    # Redirect new users to onboarding settings
+    user_id = session.get("user_id")
+    if user_id != "guest":
+        if session.get("new_user") or not db.is_onboarding_complete(user_id):
+            return redirect(url_for("settings_page") + "?onboarding=1")
     return render_template("index.html")
+
+
+@app.route("/chat/history")
+def get_history():
+    """Load previous chat history for logged-in user."""
+    user_id = session.get("user_id")
+    if not user_id or user_id == "guest":
+        return jsonify({"history": []})
+
+    history = db.get_chat_history(user_id, limit=20)
+    return jsonify({"history": history})
+
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    global chat_history
+    user_id = session.get("user_id")
+    username = session.get("username", "Guest")
+    is_guest = (user_id == "guest" or not user_id)
+
     user_input = request.json.get("message")
-    
+
     if not user_input:
         return jsonify({"reply": "Error: Empty message"})
 
     try:
+        # Load chat history from DB (or empty for guests)
+        if not is_guest:
+            chat_history = db.get_chat_history(user_id, limit=10)
+        else:
+            chat_history = []
+
         # 1. Decide Intent
         decision = bot.get_intent(user_input)
         intent = decision.get("intent")
-        
+
         db_results = None
         bot_reply = ""
 
-        # 2. Execute Logic
+        # 2. Load user preferences from PostgreSQL (or empty for guests)
+        if not is_guest:
+            user_profile = db.get_preferences(user_id)
+        else:
+            user_profile = {}
+
+        # 3. Execute Logic
         if intent == "SEARCH":
             search_query = decision.get("keywords", user_input)
-            
-            # Load the user profile from users.json to apply metadata filters
-            user_profile = bot.load_user_profile("Akram")
-            
+
+            # Log the search
+            if not is_guest:
+                db.save_search(user_id, search_query)
+
             # --- USING THE SELF-RAG REFLECTION SEARCH ---
             db_results = bot.reflective_search(user_input, search_query, user_profile)
-            
-            bot_reply = bot.generate_response_with_history(user_input, chat_history, db_results)
-            
+
+            bot_reply = bot.generate_response_with_history(
+                user_input, chat_history, context_data=db_results, user_profile=user_profile
+            )
+
         elif intent == "SAVE_PREF":
             key = decision.get("key", "general")
             value = decision.get("value", "true")
-            bot.save_user_preference("Akram", key, value)
-            
-            if key == "name":
-                bot_reply = f"Nice to meet you, {value}! I will remember that."
+
+            if not is_guest:
+                db.save_preference(user_id, key, value)
+                if key == "name":
+                    bot_reply = f"Nice to meet you, {value}! I will remember that."
+                else:
+                    bot_reply = f"Ok can. I saved that your {key} is {value}."
             else:
-                bot_reply = f"Ok can. I saved that your {key} is {value}."
-                
+                bot_reply = "Eh, I cannot save preferences for guest users lah. Create an account first!"
+
         elif intent == "BLOCK":
             bot_reply = "Walao, I am a food chatbot leh. Ask me about food only. Don't ask me random things."
-            
-        else: # CHAT
-            bot_reply = bot.generate_response_with_history(user_input, chat_history)
 
-        # 3. Update History
-        if intent != "BLOCK":
-            chat_history.append({"role": "user", "content": user_input})
-            chat_history.append({"role": "assistant", "content": bot_reply})
-            if len(chat_history) > 10:
-                chat_history = chat_history[-10:]
+        else:  # CHAT
+            bot_reply = bot.generate_response_with_history(
+                user_input, chat_history, user_profile=user_profile
+            )
+
+        # 4. Save chat messages to DB (for logged-in users)
+        if intent != "BLOCK" and not is_guest:
+            db.save_chat_message(user_id, "user", user_input)
+            db.save_chat_message(user_id, "assistant", bot_reply)
 
         return jsonify({"reply": bot_reply})
 
     except Exception as e:
         print(f"Error in chat route: {e}")
         return jsonify({"reply": "Paiseh, my brain short circuit. Can try again?"})
+
+
+@app.route("/chat/clear", methods=["POST"])
+def clear_history():
+    """Clear chat history for the current user."""
+    user_id = session.get("user_id")
+    if user_id and user_id != "guest":
+        db.clear_chat_history(user_id)
+    return jsonify({"success": True})
+
 
 if __name__ == "__main__":
     app.run(debug=True)

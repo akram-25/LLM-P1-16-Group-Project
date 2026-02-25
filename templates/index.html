@@ -27,10 +27,40 @@
         .chat-header {
             background-color: #ff6b6b;
             color: white;
-            padding: 20px;
-            text-align: center;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header-left {
             font-size: 1.2rem;
             font-weight: bold;
+        }
+        .chat-header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+        }
+        .user-badge {
+            background-color: rgba(255,255,255,0.2);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+        .header-btn:hover {
+            background: rgba(255,255,255,0.35);
         }
         .chat-messages {
             flex: 1;
@@ -62,6 +92,24 @@
             align-self: flex-start;
             border-bottom-left-radius: 0;
         }
+        .history-divider {
+            text-align: center;
+            color: #bbb;
+            font-size: 0.75rem;
+            margin: 10px 0;
+            position: relative;
+        }
+        .history-divider::before,
+        .history-divider::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 30%;
+            height: 1px;
+            background-color: #ddd;
+        }
+        .history-divider::before { left: 5%; }
+        .history-divider::after { right: 5%; }
         .input-area {
             display: flex;
             padding: 20px;
@@ -77,7 +125,7 @@
             margin-right: 10px;
             font-family: inherit;
         }
-        button {
+        button.send-btn {
             padding: 10px 20px;
             background-color: #ff6b6b;
             color: white;
@@ -87,7 +135,7 @@
             font-weight: bold;
             transition: background 0.2s;
         }
-        button:hover { background-color: #ff5252; }
+        button.send-btn:hover { background-color: #ff5252; }
         .typing-indicator {
             font-style: italic;
             color: #aaa;
@@ -105,18 +153,72 @@
 <body>
 
 <div class="chat-container">
-    <div class="chat-header">🍜 Food Chatbot</div>
+    <div class="chat-header">
+        <div class="chat-header-left">🍜 Food Chatbot</div>
+        <div class="chat-header-right">
+            <span class="user-badge" id="user-badge">Loading...</span>
+            <button class="header-btn" onclick="window.location.href='/settings'" title="Food Preferences">⚙️</button>
+            <button class="header-btn" onclick="clearHistory()" title="Clear chat history">🗑️</button>
+            <button class="header-btn" onclick="window.location.href='/auth/logout'" title="Logout">Logout</button>
+        </div>
+    </div>
     <div class="chat-messages" id="chat-box">
-        <div class="message bot-message">Eh hello! I am your Food Chatbot. Hungry already is it? Looking for makan recommendation or want to tell me your preferences?</div>
         <div class="typing-indicator" id="typing">Chatbot is typing...</div>
     </div>
     <div class="input-area">
         <input type="text" id="user-input" placeholder="Type your message..." onkeypress="handleEnter(event)" autocomplete="off">
-        <button onclick="sendMessage()">Send</button>
+        <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
 </div>
 
 <script>
+    // Load user info and chat history on page load
+    window.addEventListener("DOMContentLoaded", async () => {
+        // Get current user
+        try {
+            const res = await fetch("/auth/me");
+            const data = await res.json();
+            if (data.logged_in) {
+                document.getElementById("user-badge").textContent = data.username;
+            } else {
+                document.getElementById("user-badge").textContent = "Guest";
+            }
+        } catch (e) {
+            document.getElementById("user-badge").textContent = "Guest";
+        }
+
+        // Load previous chat history
+        try {
+            const res = await fetch("/chat/history");
+            const data = await res.json();
+            if (data.history && data.history.length > 0) {
+                // Add divider
+                const chatBox = document.getElementById("chat-box");
+                const divider = document.createElement("div");
+                divider.className = "history-divider";
+                divider.textContent = "Previous conversation";
+                const typingIndicator = document.getElementById("typing");
+                chatBox.insertBefore(divider, typingIndicator);
+
+                data.history.forEach(msg => {
+                    const cls = msg.role === "user" ? "user-message" : "bot-message";
+                    appendMessage(msg.content, cls);
+                });
+            } else {
+                // Show welcome message for new/guest users
+                appendMessage(
+                    "Eh hello! I am your Food Chatbot. Hungry already is it? Looking for makan recommendation or want to tell me your preferences?",
+                    "bot-message"
+                );
+            }
+        } catch (e) {
+            appendMessage(
+                "Eh hello! I am your Food Chatbot. Hungry already is it? Looking for makan recommendation or want to tell me your preferences?",
+                "bot-message"
+            );
+        }
+    });
+
     async function sendMessage() {
         const inputField = document.getElementById("user-input");
         const message = inputField.value.trim();
@@ -163,6 +265,24 @@
     function handleEnter(event) {
         if (event.key === "Enter") {
             sendMessage();
+        }
+    }
+
+    async function clearHistory() {
+        if (!confirm("Clear all chat history?")) return;
+        try {
+            await fetch("/chat/clear", { method: "POST" });
+            // Remove all messages from chat box
+            const chatBox = document.getElementById("chat-box");
+            const typingIndicator = document.getElementById("typing");
+            chatBox.innerHTML = "";
+            chatBox.appendChild(typingIndicator);
+            appendMessage(
+                "Chat history cleared! Let's start fresh. What are you craving?",
+                "bot-message"
+            );
+        } catch (e) {
+            console.error("Failed to clear history", e);
         }
     }
 </script>

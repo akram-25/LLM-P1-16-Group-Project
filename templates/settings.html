@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Preferences - Settings 🍜</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 30px 15px;
+        }
+        .settings-container {
+            width: 520px;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .settings-header {
+            background-color: #ff6b6b;
+            color: white;
+            padding: 22px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .settings-header h1 { font-size: 1.3rem; }
+        .settings-header .back-link {
+            color: white;
+            text-decoration: none;
+            font-size: 0.85rem;
+            opacity: 0.85;
+            transition: opacity 0.2s;
+        }
+        .settings-header .back-link:hover { opacity: 1; }
+
+        .onboarding-banner {
+            background-color: #fff3e0;
+            border-bottom: 1px solid #ffe0b2;
+            padding: 15px 25px;
+            font-size: 0.9rem;
+            color: #e65100;
+            display: none;
+        }
+        .onboarding-banner.visible { display: block; }
+
+        .settings-body { padding: 25px; }
+
+        .section {
+            margin-bottom: 28px;
+        }
+        .section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .section-desc {
+            font-size: 0.82rem;
+            color: #999;
+            margin-bottom: 12px;
+        }
+
+        /* Tag/chip input styling */
+        .tag-input-container {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            min-height: 44px;
+            cursor: text;
+            transition: border 0.2s;
+        }
+        .tag-input-container:focus-within {
+            border-color: #ff6b6b;
+        }
+        .tag {
+            background-color: #ff6b6b;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.82rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            animation: fadeIn 0.2s ease;
+        }
+        .tag .remove-tag {
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .tag .remove-tag:hover { opacity: 1; }
+        .tag-input {
+            border: none;
+            outline: none;
+            font-size: 0.9rem;
+            font-family: inherit;
+            flex: 1;
+            min-width: 120px;
+            padding: 4px;
+        }
+
+        /* Preset chip buttons */
+        .presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .preset-chip {
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            color: #555;
+        }
+        .preset-chip:hover {
+            background-color: #ffe0e0;
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+        }
+        .preset-chip.selected {
+            background-color: #ff6b6b;
+            border-color: #ff6b6b;
+            color: white;
+        }
+
+        /* Select input */
+        .select-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .select-option {
+            background-color: #f0f0f0;
+            border: 2px solid #e0e0e0;
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            color: #555;
+        }
+        .select-option:hover {
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+        }
+        .select-option.selected {
+            background-color: #ff6b6b;
+            border-color: #ff6b6b;
+            color: white;
+        }
+
+        /* Text area */
+        .pref-textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            outline: none;
+            resize: vertical;
+            min-height: 60px;
+            transition: border 0.2s;
+        }
+        .pref-textarea:focus { border-color: #ff6b6b; }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .save-btn {
+            flex: 1;
+            padding: 14px;
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: inherit;
+        }
+        .save-btn:hover { background-color: #ff5252; }
+        .save-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        .skip-btn {
+            padding: 14px 20px;
+            background-color: #f0f0f0;
+            color: #777;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: inherit;
+        }
+        .skip-btn:hover { background-color: #e0e0e0; }
+
+        .msg-toast {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .msg-toast.error {
+            background-color: #ffe0e0;
+            color: #d32f2f;
+            border: 1px solid #ffcdd2;
+            display: block;
+        }
+        .msg-toast.success {
+            background-color: #e0f5e0;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="settings-container">
+    <div class="settings-header">
+        <h1>⚙️ Food Preferences</h1>
+        <a href="/" class="back-link" id="back-link">← Back to Chat</a>
+    </div>
+
+    <div class="onboarding-banner" id="onboarding-banner">
+        👋 Welcome! Set up your food preferences so I can give you better recommendations. You can always change these later.
+    </div>
+
+    <div class="settings-body">
+        <div class="msg-toast" id="save-msg"></div>
+
+        <!-- ALLERGIES -->
+        <div class="section">
+            <div class="section-title">🚫 Food Allergies</div>
+            <div class="section-desc">Add any ingredients or foods you're allergic to</div>
+            <div class="tag-input-container" id="allergy-tags" onclick="document.getElementById('allergy-input').focus()">
+                <input type="text" class="tag-input" id="allergy-input" placeholder="Type and press Enter...">
+            </div>
+            <div class="presets" id="allergy-presets">
+                <button class="preset-chip" data-target="allergy" data-value="Peanuts">Peanuts</button>
+                <button class="preset-chip" data-target="allergy" data-value="Shellfish">Shellfish</button>
+                <button class="preset-chip" data-target="allergy" data-value="Dairy">Dairy</button>
+                <button class="preset-chip" data-target="allergy" data-value="Gluten">Gluten</button>
+                <button class="preset-chip" data-target="allergy" data-value="Eggs">Eggs</button>
+                <button class="preset-chip" data-target="allergy" data-value="Soy">Soy</button>
+            </div>
+        </div>
+
+        <!-- FAVOURITE CUISINES -->
+        <div class="section">
+            <div class="section-title">🍜 Favourite Cuisines</div>
+            <div class="section-desc">Pick your favourite types of food</div>
+            <div class="tag-input-container" id="cuisine-tags" onclick="document.getElementById('cuisine-input').focus()">
+                <input type="text" class="tag-input" id="cuisine-input" placeholder="Type and press Enter...">
+            </div>
+            <div class="presets" id="cuisine-presets">
+                <button class="preset-chip" data-target="cuisine" data-value="Chinese">Chinese</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Malay">Malay</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Indian">Indian</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Japanese">Japanese</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Korean">Korean</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Thai">Thai</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Western">Western</button>
+                <button class="preset-chip" data-target="cuisine" data-value="Peranakan">Peranakan</button>
+            </div>
+        </div>
+
+        <!-- DIETARY RESTRICTIONS -->
+        <div class="section">
+            <div class="section-title">🥗 Dietary Preferences</div>
+            <div class="section-desc">Select all that apply</div>
+            <div class="select-group" id="diet-options">
+                <button class="select-option" data-value="Halal">Halal</button>
+                <button class="select-option" data-value="Vegetarian">Vegetarian</button>
+                <button class="select-option" data-value="Vegan">Vegan</button>
+                <button class="select-option" data-value="Pescatarian">Pescatarian</button>
+                <button class="select-option" data-value="No Pork">No Pork</button>
+                <button class="select-option" data-value="No Beef">No Beef</button>
+                <button class="select-option" data-value="Low Carb">Low Carb</button>
+                <button class="select-option" data-value="Keto">Keto</button>
+            </div>
+        </div>
+
+        <!-- BUDGET -->
+        <div class="section">
+            <div class="section-title">💰 Budget Range</div>
+            <div class="section-desc">How much do you usually spend per meal?</div>
+            <div class="select-group" id="budget-options">
+                <button class="select-option" data-value="$5 and under">$5 &amp; under</button>
+                <button class="select-option" data-value="$5-$10">$5–$10</button>
+                <button class="select-option" data-value="$10-$20">$10–$20</button>
+                <button class="select-option" data-value="$20-$50">$20–$50</button>
+                <button class="select-option" data-value="$50+">$50+</button>
+            </div>
+        </div>
+
+        <!-- SPICE TOLERANCE -->
+        <div class="section">
+            <div class="section-title">🌶️ Spice Tolerance</div>
+            <div class="section-desc">How spicy can you handle?</div>
+            <div class="select-group" id="spice-options">
+                <button class="select-option" data-value="No Spice">No spice</button>
+                <button class="select-option" data-value="Mild">Mild</button>
+                <button class="select-option" data-value="Medium">Medium</button>
+                <button class="select-option" data-value="Spicy">Spicy 🔥</button>
+                <button class="select-option" data-value="Extra Spicy">Extra Spicy 🔥🔥</button>
+            </div>
+        </div>
+
+        <!-- LOCATION -->
+        <div class="section">
+            <div class="section-title">📍 Preferred Area</div>
+            <div class="section-desc">Where do you usually eat? (e.g. Ang Mo Kio, Jurong East, CBD)</div>
+            <div class="tag-input-container" id="location-tags" onclick="document.getElementById('location-input').focus()">
+                <input type="text" class="tag-input" id="location-input" placeholder="Type area and press Enter...">
+            </div>
+        </div>
+
+        <!-- ADDITIONAL NOTES -->
+        <div class="section">
+            <div class="section-title">📝 Anything Else?</div>
+            <div class="section-desc">Any other food preferences the chatbot should know about</div>
+            <textarea class="pref-textarea" id="notes-input" placeholder="e.g. I prefer air-conditioned places, I love desserts, I don't like queuing..."></textarea>
+        </div>
+
+        <!-- BUTTONS -->
+        <div class="btn-row">
+            <button class="save-btn" id="save-btn" onclick="saveSettings()">Save Preferences</button>
+            <button class="skip-btn" id="skip-btn" onclick="skipSettings()" style="display:none;">Skip for now</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // TAG INPUT SYSTEM
+    // ==========================================
+    const tagData = {
+        allergy: [],
+        cuisine: [],
+        location: []
+    };
+
+    function createTag(category, value) {
+        value = value.trim();
+        if (!value) return;
+        // Prevent duplicates (case-insensitive)
+        if (tagData[category].some(t => t.toLowerCase() === value.toLowerCase())) return;
+
+        tagData[category].push(value);
+        renderTags(category);
+
+        // Highlight matching preset chip
+        document.querySelectorAll(`.preset-chip[data-target="${category}"]`).forEach(chip => {
+            if (chip.dataset.value.toLowerCase() === value.toLowerCase()) {
+                chip.classList.add('selected');
+            }
+        });
+    }
+
+    function removeTag(category, index) {
+        const removed = tagData[category].splice(index, 1)[0];
+        renderTags(category);
+
+        // Un-highlight preset chip
+        document.querySelectorAll(`.preset-chip[data-target="${category}"]`).forEach(chip => {
+            if (chip.dataset.value.toLowerCase() === removed.toLowerCase()) {
+                chip.classList.remove('selected');
+            }
+        });
+    }
+
+    function renderTags(category) {
+        const container = document.getElementById(`${category}-tags`);
+        const input = document.getElementById(`${category}-input`);
+
+        // Remove existing tags (keep the input)
+        container.querySelectorAll('.tag').forEach(t => t.remove());
+
+        tagData[category].forEach((val, idx) => {
+            const tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.innerHTML = `${val} <span class="remove-tag" onclick="removeTag('${category}', ${idx})">&times;</span>`;
+            container.insertBefore(tag, input);
+        });
+    }
+
+    // Handle Enter key on tag inputs
+    ['allergy', 'cuisine', 'location'].forEach(category => {
+        document.getElementById(`${category}-input`).addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                createTag(category, this.value);
+                this.value = '';
+            }
+        });
+    });
+
+    // Handle preset chip clicks
+    document.querySelectorAll('.preset-chip').forEach(chip => {
+        chip.addEventListener('click', function() {
+            const category = this.dataset.target;
+            const value = this.dataset.value;
+            if (this.classList.contains('selected')) {
+                // Remove
+                const idx = tagData[category].findIndex(t => t.toLowerCase() === value.toLowerCase());
+                if (idx !== -1) removeTag(category, idx);
+            } else {
+                createTag(category, value);
+            }
+        });
+    });
+
+    // Handle multi-select option clicks (diet, budget, spice)
+    document.querySelectorAll('#diet-options .select-option').forEach(btn => {
+        btn.addEventListener('click', () => btn.classList.toggle('selected'));
+    });
+    // Budget: single select
+    document.querySelectorAll('#budget-options .select-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#budget-options .select-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        });
+    });
+    // Spice: single select
+    document.querySelectorAll('#spice-options .select-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#spice-options .select-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        });
+    });
+
+
+    // ==========================================
+    // LOAD EXISTING SETTINGS
+    // ==========================================
+    window.addEventListener('DOMContentLoaded', async () => {
+        // Check if this is onboarding
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('onboarding') === '1') {
+            document.getElementById('onboarding-banner').classList.add('visible');
+            document.getElementById('skip-btn').style.display = 'block';
+            document.getElementById('back-link').style.display = 'none';
+        }
+
+        // Load existing preferences
+        try {
+            const res = await fetch('/settings/data');
+            const data = await res.json();
+            if (data.preferences) {
+                const prefs = data.preferences;
+
+                // Allergies
+                if (prefs.allergy) {
+                    prefs.allergy.forEach(v => createTag('allergy', v));
+                }
+                // Cuisines
+                if (prefs.cuisine) {
+                    prefs.cuisine.forEach(v => createTag('cuisine', v));
+                }
+                // Location
+                if (prefs.location) {
+                    prefs.location.forEach(v => createTag('location', v));
+                }
+                // Diet
+                if (prefs.diet) {
+                    prefs.diet.forEach(v => {
+                        document.querySelectorAll('#diet-options .select-option').forEach(btn => {
+                            if (btn.dataset.value.toLowerCase() === v.toLowerCase()) {
+                                btn.classList.add('selected');
+                            }
+                        });
+                    });
+                }
+                // Budget
+                if (prefs.budget && prefs.budget.length > 0) {
+                    const budgetVal = prefs.budget[0];
+                    document.querySelectorAll('#budget-options .select-option').forEach(btn => {
+                        if (btn.dataset.value === budgetVal) {
+                            btn.classList.add('selected');
+                        }
+                    });
+                }
+                // Spice
+                if (prefs.spice && prefs.spice.length > 0) {
+                    const spiceVal = prefs.spice[0];
+                    document.querySelectorAll('#spice-options .select-option').forEach(btn => {
+                        if (btn.dataset.value === spiceVal) {
+                            btn.classList.add('selected');
+                        }
+                    });
+                }
+                // Notes
+                if (prefs.notes && prefs.notes.length > 0) {
+                    document.getElementById('notes-input').value = prefs.notes.join('\n');
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load preferences:', e);
+        }
+    });
+
+
+    // ==========================================
+    // SAVE / SKIP
+    // ==========================================
+    function collectPreferences() {
+        const prefs = {};
+
+        // Allergies
+        if (tagData.allergy.length > 0) prefs.allergy = tagData.allergy;
+        // Cuisines
+        if (tagData.cuisine.length > 0) prefs.cuisine = tagData.cuisine;
+        // Location
+        if (tagData.location.length > 0) prefs.location = tagData.location;
+
+        // Diet (multi-select)
+        const dietVals = [];
+        document.querySelectorAll('#diet-options .select-option.selected').forEach(btn => {
+            dietVals.push(btn.dataset.value);
+        });
+        if (dietVals.length > 0) prefs.diet = dietVals;
+
+        // Budget (single-select)
+        const budgetBtn = document.querySelector('#budget-options .select-option.selected');
+        if (budgetBtn) prefs.budget = [budgetBtn.dataset.value];
+
+        // Spice (single-select)
+        const spiceBtn = document.querySelector('#spice-options .select-option.selected');
+        if (spiceBtn) prefs.spice = [spiceBtn.dataset.value];
+
+        // Notes
+        const notes = document.getElementById('notes-input').value.trim();
+        if (notes) prefs.notes = [notes];
+
+        return prefs;
+    }
+
+    async function saveSettings() {
+        const btn = document.getElementById('save-btn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        const prefs = collectPreferences();
+
+        try {
+            const res = await fetch('/settings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ preferences: prefs })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                const msgEl = document.getElementById('save-msg');
+                msgEl.textContent = 'Preferences saved!';
+                msgEl.className = 'msg-toast success';
+
+                // If onboarding, redirect to chat after short delay
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('onboarding') === '1') {
+                    setTimeout(() => window.location.href = '/', 800);
+                } else {
+                    setTimeout(() => { msgEl.className = 'msg-toast'; }, 2500);
+                }
+            } else {
+                showToast(data.error || 'Failed to save', 'error');
+            }
+        } catch (e) {
+            showToast('Could not connect to server', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Preferences';
+        }
+    }
+
+    async function skipSettings() {
+        try {
+            await fetch('/settings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ preferences: {}, skip: true })
+            });
+        } catch (e) { /* ignore */ }
+        window.location.href = '/';
+    }
+
+    function showToast(text, type) {
+        const el = document.getElementById('save-msg');
+        el.textContent = text;
+        el.className = `msg-toast ${type}`;
+        setTimeout(() => { el.className = 'msg-toast'; }, 3000);
+    }
+</script>
+</body>
+</html>
