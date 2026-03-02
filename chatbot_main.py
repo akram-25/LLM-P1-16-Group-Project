@@ -117,6 +117,8 @@ You are a helpful Singaporean food chatbot.
 - Be friendly but concise.
 - Use the provided Context (Database Results) to recommend places enthusiastically.
 - Use the User History to remember what we just talked about.
+- You have access to the user's saved food preferences (if any). When the user asks about their preferences, dietary restrictions, allergies, or profile, ALWAYS refer to the saved preferences and list them clearly.
+- When recommending food, take the user's preferences into account (e.g. avoid allergens, respect dietary restrictions, match budget and cuisine preferences).
 """
 
 GRADER_PROMPT = """
@@ -222,8 +224,31 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
     
     if user_profile:
-        prefs_str = f"IMPORTANT - User Preferences: {json.dumps(user_profile)}"
+        # Build a human-readable preferences summary
+        pref_lines = []
+        if user_profile.get('allergy'):
+            pref_lines.append(f"Food Allergies: {', '.join(user_profile['allergy'])}")
+        if user_profile.get('diet'):
+            pref_lines.append(f"Dietary Restrictions: {', '.join(user_profile['diet'])}")
+        if user_profile.get('cuisine'):
+            pref_lines.append(f"Favourite Cuisines: {', '.join(user_profile['cuisine'])}")
+        if user_profile.get('budget'):
+            pref_lines.append(f"Budget Range: {', '.join(user_profile['budget'])}")
+        if user_profile.get('spice'):
+            pref_lines.append(f"Spice Tolerance: {', '.join(user_profile['spice'])}")
+        if user_profile.get('location'):
+            pref_lines.append(f"Preferred Area: {', '.join(user_profile['location'])}")
+        if user_profile.get('notes'):
+            pref_lines.append(f"Additional Notes: {', '.join(user_profile['notes'])}")
+
+        if pref_lines:
+            prefs_str = "IMPORTANT — User's Saved Preferences:\n" + "\n".join(pref_lines)
+            prefs_str += "\n\nIf the user asks about their preferences, repeat these back to them clearly."
+        else:
+            prefs_str = "The user has not set any food preferences yet. If they ask, let them know they can set preferences via the ⚙️ settings page."
         messages.append({"role": "system", "content": prefs_str})
+    else:
+        messages.append({"role": "system", "content": "The user has not set any food preferences yet. If they ask, let them know they can set preferences via the ⚙️ settings page."})
 
     if context_data:
         context_str = "Database Results:\n"

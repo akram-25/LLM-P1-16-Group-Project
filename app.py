@@ -192,6 +192,7 @@ def chat():
         # 2. Load user preferences from PostgreSQL (or empty for guests)
         if not is_guest:
             user_profile = db.get_preferences(user_id)
+            print(f"   [Prefs] Loaded for {username}: {user_profile}")
         else:
             user_profile = {}
 
