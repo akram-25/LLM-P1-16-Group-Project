@@ -95,18 +95,25 @@ INTENT_PROMPT = """
 You are the "Router" for a Singapore food chatbot.
 Classify the user's input into one of these intents:
 
-1. SEARCH: User asks for food recommendations, details, location, prices, or "vibe".
+1. SEARCH: User asks for food recommendations, restaurant suggestions, "where to eat", food details, location of eateries, prices, or dining "vibe".
    - Return: {"intent": "SEARCH", "keywords": "search terms"}
 
-2. SAVE_PREF: User states a personal fact or identity.
-   - **CRITICAL**: You must map the 'key' to one of these STANDARD keys: "name", "diet", "allergy", "location".
+2. SAVE_PREF: User STATES, SETS, or CHANGES a personal preference or fact about themselves.
+   - Examples: "I'm allergic to peanuts", "I don't eat pork", "change my spice tolerance to high", "my budget is $10", "I prefer Japanese food", "my name is John", "I live near Jurong"
+   - Map the 'key' to one of these STANDARD keys: "name", "diet", "allergy", "cuisine", "budget", "spice", "location"
    - Return: {"intent": "SAVE_PREF", "key": "STANDARD_KEY", "value": "extracted value"}
 
-3. CHAT: Social greetings, small talk, OR questions about the user's own history/profile.
+3. CHAT: Social greetings, small talk, thank you, general food chat, questions about the chatbot itself (e.g. "what can you do?", "who are you?"), OR when the user ASKS or QUERIES about their own preferences/profile/history.
+   - IMPORTANT: If the user is ASKING about their preferences (e.g. "what are my allergies?", "what are my dietary requirements?", "tell me my preferences", "do I have food restrictions?", "remind me what I like"), this is CHAT, NOT SAVE_PREF.
    - Return: {"intent": "CHAT"}
 
-4. BLOCK: Topics CLEARLY NOT related to food/dining/profile (e.g., sports, coding, politics).
+4. BLOCK: Topics CLEARLY NOT related to food/dining/profile/the chatbot (e.g., sports, coding, politics, homework).
    - Return: {"intent": "BLOCK"}
+
+CRITICAL RULES:
+- ASKING about preferences = CHAT (user wants to know their saved info)
+- STATING or CHANGING a preference = SAVE_PREF (user provides new info to save)
+- If unsure between SAVE_PREF and CHAT, choose CHAT.
 
 Reply ONLY JSON.
 """

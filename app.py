@@ -217,10 +217,14 @@ def chat():
 
             if not is_guest:
                 db.save_preference(user_id, key, value)
-                if key == "name":
-                    bot_reply = f"Nice to meet you, {value}! I will remember that."
-                else:
-                    bot_reply = f"Ok can. I saved that your {key} is {value}."
+                # Reload preferences after saving so the LLM sees the updated data
+                user_profile = db.get_preferences(user_id)
+                # Let the LLM generate a natural confirmation response
+                save_context = f"[SYSTEM NOTE: You just saved the user's {key} preference as '{value}'. Confirm this naturally in Singlish. Keep it short — 1-2 sentences.]"
+                chat_history_with_note = chat_history + [{"role": "system", "content": save_context}]
+                bot_reply = bot.generate_response_with_history(
+                    user_input, chat_history_with_note, user_profile=user_profile
+                )
             else:
                 bot_reply = "Eh, I cannot save preferences for guest users lah. Create an account first!"
 
