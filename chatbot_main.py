@@ -48,6 +48,12 @@ vector_db = Chroma(
     embedding_function=embedding_fn
 ) if chroma_auth_client else None
 
+vector_db_secondary = Chroma(
+    client=chroma_auth_client,
+    collection_name="foodkaki_restaurants_secondary",
+    embedding_function=embedding_fn
+) if chroma_auth_client else None
+
 
 # ==========================================
 # 2. USER MEMORY (Long-Term Storage)
@@ -163,7 +169,7 @@ def get_intent(user_query):
 # 4. CORE FUNCTIONS (RAG, Reflection & Generation)
 # ==========================================
 def search_cloud_db(query_text, user_profile=None):
-    if not vector_db:
+    if not vector_db and not vector_db_secondary:
         return []
         
     search_filter = {}
@@ -172,25 +178,33 @@ def search_cloud_db(query_text, user_profile=None):
         if "diet" in user_profile and len(user_profile["diet"]) > 0:
             search_filter["diet"] = user_profile["diet"][0].lower()
 
-    try:
-        if search_filter:
-            print(f"   ⚙️ [Filter] Applying strict rules: {search_filter}")
-            results = vector_db.similarity_search(query_text, k=4, filter=search_filter)
-        else:
-            results = vector_db.similarity_search(query_text, k=4)
-            
-        clean_results = []
-        for doc in results:
-            info = {
-                "name": doc.metadata.get('name', 'Unknown Place'),
-                "category": doc.metadata.get('category', 'Food'),
-                "description": doc.page_content
-            }
-            clean_results.append(info)
-        return clean_results
-    except Exception as e:
-        print(f"   ❌ DB Search Failed: {e}")
-        return []
+    all_results = []
+    seen_names = set()
+
+    # Search both collections
+    for db, db_name in [(vector_db, "primary"), (vector_db_secondary, "secondary")]:
+        if not db:
+            continue
+        try:
+            if search_filter:
+                print(f"   ⚙️ [Filter] Applying strict rules on {db_name}: {search_filter}")
+                results = db.similarity_search(query_text, k=4, filter=search_filter)
+            else:
+                results = db.similarity_search(query_text, k=4)
+
+            for doc in results:
+                name = doc.metadata.get('name', 'Unknown Place')
+                if name not in seen_names:
+                    seen_names.add(name)
+                    all_results.append({
+                        "name": name,
+                        "category": doc.metadata.get('category', 'Food'),
+                        "description": doc.page_content
+                    })
+        except Exception as e:
+            print(f"   ❌ DB Search Failed ({db_name}): {e}")
+
+    return all_results
 
 def reflective_search(user_input, initial_keywords, user_profile=None):
     print(f"   🔎 [Agent] Searching Cloud DB for: '{initial_keywords}'...")
