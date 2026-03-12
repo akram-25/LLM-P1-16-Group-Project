@@ -8,6 +8,8 @@ from langchain_openai import OpenAIEmbeddings
 import chromadb
 from chromadb.config import Settings
 
+from langchain_community.tools import DuckDuckGoSearchRun
+
 # ==========================================
 # 1. SETUP & CONNECTION
 # ==========================================
@@ -42,13 +44,13 @@ embedding_fn = OpenAIEmbeddings(
     openai_api_key=os.getenv('OPENAI_API_KEY')
 )
 
-vector_db = Chroma(
+primary_vector_db = Chroma(
     client=chroma_auth_client,
     collection_name="foodkaki_restaurants",
     embedding_function=embedding_fn
 ) if chroma_auth_client else None
 
-vector_db_secondary = Chroma(
+secondary_vector_db = Chroma(
     client=chroma_auth_client,
     collection_name="foodkaki_restaurants_secondary",
     embedding_function=embedding_fn
@@ -99,27 +101,28 @@ def save_user_preference(username, key, value):
 # ==========================================
 INTENT_PROMPT = """
 You are the "Router" for a Singapore food chatbot.
-Classify the user's input into one of these intents:
+Classify the user's input into one of these intents based on the User Query and the Recent Chat History.
 
-1. SEARCH: User asks for food recommendations, restaurant suggestions, "where to eat", food details, location of eateries, prices, or dining "vibe".
+1. SEARCH: User asks for food recommendations, details, location, prices, or "vibe".
+   - **CRITICAL**: Resolve pronouns using history.
    - Return: {"intent": "SEARCH", "keywords": "search terms"}
 
-2. SAVE_PREF: User STATES, SETS, or CHANGES a personal preference or fact about themselves.
-   - Examples: "I'm allergic to peanuts", "I don't eat pork", "change my spice tolerance to high", "my budget is $10", "I prefer Japanese food", "my name is John", "I live near Jurong"
-   - Map the 'key' to one of these STANDARD keys: "name", "diet", "allergy", "cuisine", "budget", "spice", "location"
+2. LIVE_SEARCH: User asks for operational details like opening hours, phone numbers, or exact addresses.
+   - **CRITICAL**: Resolve pronouns using history. Always include the restaurant name and the specific detail requested in the query.
+   - Example: {"intent": "LIVE_SEARCH", "query": "Ah Seng Durian opening hours and phone number Singapore"}
+   - Return: {"intent": "LIVE_SEARCH", "query": "exact search terms"}
+
+3. SAVE_PREF: User states a personal fact or identity.
    - Return: {"intent": "SAVE_PREF", "key": "STANDARD_KEY", "value": "extracted value"}
 
-3. CHAT: Social greetings, small talk, thank you, general food chat, questions about the chatbot itself (e.g. "what can you do?", "who are you?"), OR when the user ASKS or QUERIES about their own preferences/profile/history.
-   - IMPORTANT: If the user is ASKING about their preferences (e.g. "what are my allergies?", "what are my dietary requirements?", "tell me my preferences", "do I have food restrictions?", "remind me what I like"), this is CHAT, NOT SAVE_PREF.
+4. SAVE_FAVORITE: User asks to save or bookmark a specific restaurant.
+   - Return: {"intent": "SAVE_FAVORITE", "restaurant_name": "Extracted Name"}
+
+5. CHAT: Social greetings, small talk, OR questions about the user's own history/profile.
    - Return: {"intent": "CHAT"}
 
-4. BLOCK: Topics CLEARLY NOT related to food/dining/profile/the chatbot (e.g., sports, coding, politics, homework).
+6. BLOCK: Topics CLEARLY NOT related to food/dining/profile.
    - Return: {"intent": "BLOCK"}
-
-CRITICAL RULES:
-- ASKING about preferences = CHAT (user wants to know their saved info)
-- STATING or CHANGING a preference = SAVE_PREF (user provides new info to save)
-- If unsure between SAVE_PREF and CHAT, choose CHAT.
 
 Reply ONLY JSON.
 """
@@ -128,10 +131,13 @@ PERSONA_PROMPT = """
 You are a helpful Singaporean food chatbot.
 - Speak in natural Singlish (use "lah", "lor", "shiok", "paiseh", "can").
 - Be friendly but concise.
-- Use the provided Context (Database Results) to recommend places enthusiastically.
 - Use the User History to remember what we just talked about.
-- You have access to the user's saved food preferences (if any). When the user asks about their preferences, dietary restrictions, allergies, or profile, ALWAYS refer to the saved preferences and list them clearly.
-- When recommending food, take the user's preferences into account (e.g. avoid allergens, respect dietary restrictions, match budget and cuisine preferences).
+
+CRITICAL RULES FOR ANSWERING (DO NOT BREAK THESE):
+1. FOR RECOMMENDATIONS: STRICTLY base your restaurant suggestions ONLY on the provided "Database Results" (Primary or Extended Selection). 
+2. FOR OPERATIONAL INFO (Hours, Phone, Address): If the context includes "Live Web Search", you are AUTHORIZED to use that information to answer the user's specific question. Say something like, "I just checked online for you..."
+3. NEVER invent or hallucinate information. If the Database Results or Web Search Results are empty, you MUST apologize and say you don't know.
+4. When giving recommendations, present "Primary Selection" places as "Top Picks 🌟", and "Extended Selection" places as "More Options 🍽️".
 """
 
 GRADER_PROMPT = """
@@ -148,12 +154,22 @@ Task: Evaluate if the retrieved results accurately satisfy the user's query (pay
 Reply ONLY in JSON.
 """
 
-def get_intent(user_query):
+def get_intent(user_query, chat_history=[]):
     try:
+        # Convert the last 4 messages of history into a readable string for the router
+        history_text = "None"
+        if chat_history:
+            # Grab just the last few turns so we don't waste tokens
+            recent_context = chat_history[-4:] 
+            history_text = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in recent_context])
+
+        # Inject the history into the system prompt
+        dynamic_system_prompt = INTENT_PROMPT + f"\n\n--- RECENT CHAT HISTORY ---\n{history_text}"
+
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": INTENT_PROMPT},
+                {"role": "system", "content": dynamic_system_prompt},
                 {"role": "user", "content": user_query}
             ],
             temperature=0,
@@ -164,47 +180,79 @@ def get_intent(user_query):
         print(f"   [Router Error] {e}")
         return {"intent": "CHAT"}
 
-
 # ==========================================
 # 4. CORE FUNCTIONS (RAG, Reflection & Generation)
 # ==========================================
 def search_cloud_db(query_text, user_profile=None):
-    if not vector_db and not vector_db_secondary:
+    if not primary_vector_db or not secondary_vector_db:
+        print("   ❌ Databases not fully initialized.")
         return []
         
-    search_filter = {}
+    # --- UPDATED FILTER LOGIC ---
+    # We use ChromaDB's $and operator if we have multiple strict constraints
+    strict_filters = []
     
     if user_profile:
-        if "diet" in user_profile and len(user_profile["diet"]) > 0:
-            search_filter["diet"] = user_profile["diet"][0].lower()
+        # ONLY apply strict filters for health/dealbreakers!
+        
+        # 1. Strict Diet Filter
+        if user_profile.get("diet") and len(user_profile["diet"]) > 0:
+            strict_filters.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
+            
+        # 2. Strict Allergy Filter (Filter OUT restaurants with this allergen)
+        if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
+            for allergen in user_profile["allergy"]:
+                # Assuming your DB metadata has an 'allergens' list or string
+                strict_filters.append({"allergens": {"$ne": allergen.lower()}})
 
-    all_results = []
-    seen_names = set()
+    # Compile the final ChromaDB filter dictionary
+    search_filter = None
+    if len(strict_filters) == 1:
+        search_filter = strict_filters[0]
+    elif len(strict_filters) > 1:
+        search_filter = {"$and": strict_filters}
+    # ----------------------------
 
-    # Search both collections
-    for db, db_name in [(vector_db, "primary"), (vector_db_secondary, "secondary")]:
-        if not db:
-            continue
-        try:
-            if search_filter:
-                print(f"   ⚙️ [Filter] Applying strict rules on {db_name}: {search_filter}")
-                results = db.similarity_search(query_text, k=4, filter=search_filter)
-            else:
-                results = db.similarity_search(query_text, k=4)
+    try:
+        if search_filter:
+            print(f"   ⚙️ [Filter] Applying strict Dealbreaker rules: {search_filter}")
+            primary_docs = primary_vector_db.similarity_search(query_text, k=2, filter=search_filter)
+            secondary_docs = secondary_vector_db.similarity_search(query_text, k=2, filter=search_filter)
+        else:
+            print("   ⚙️ [Filter] No strict dealbreakers. Doing open search.")
+            primary_docs = primary_vector_db.similarity_search(query_text, k=2)
+            secondary_docs = secondary_vector_db.similarity_search(query_text, k=2)
+            
+        # ... [Rest of your function mapping docs to clean_results remains the same] ...
+            
+        clean_results = []
+        
+        # 1. Process the 2 Primary Results
+        for doc in primary_docs:
+            info = {
+                "name": doc.metadata.get('name', 'Unknown Place'),
+                "category": doc.metadata.get('category', 'Food'),
+                "tier": "Primary Selection", # Optional: Helps LLM know it's a top pick
+                "description": doc.page_content
+            }
+            clean_results.append(info)
 
-            for doc in results:
-                name = doc.metadata.get('name', 'Unknown Place')
-                if name not in seen_names:
-                    seen_names.add(name)
-                    all_results.append({
-                        "name": name,
-                        "category": doc.metadata.get('category', 'Food'),
-                        "description": doc.page_content
-                    })
-        except Exception as e:
-            print(f"   ❌ DB Search Failed ({db_name}): {e}")
-
-    return all_results
+        # 2. Process the 2 Secondary Results
+        for doc in secondary_docs:
+            info = {
+                "name": doc.metadata.get('name', 'Unknown Place'),
+                "category": doc.metadata.get('category', 'Food'),
+                "tier": "Extended Selection", 
+                "description": doc.page_content
+            }
+            clean_results.append(info)
+            
+        print(f"   ✅ [Search] Retrieved {len(primary_docs)} Primary and {len(secondary_docs)} Secondary results.")
+        return clean_results
+        
+    except Exception as e:
+        print(f"   ❌ DB Search Failed: {e}")
+        return []
 
 def reflective_search(user_input, initial_keywords, user_profile=None):
     print(f"   🔎 [Agent] Searching Cloud DB for: '{initial_keywords}'...")
@@ -244,37 +292,20 @@ def reflective_search(user_input, initial_keywords, user_profile=None):
 def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
     
+    # Let the LLM see the user's saved preferences!
     if user_profile:
-        # Build a human-readable preferences summary
-        pref_lines = []
-        if user_profile.get('allergy'):
-            pref_lines.append(f"Food Allergies: {', '.join(user_profile['allergy'])}")
-        if user_profile.get('diet'):
-            pref_lines.append(f"Dietary Restrictions: {', '.join(user_profile['diet'])}")
-        if user_profile.get('cuisine'):
-            pref_lines.append(f"Favourite Cuisines: {', '.join(user_profile['cuisine'])}")
-        if user_profile.get('budget'):
-            pref_lines.append(f"Budget Range: {', '.join(user_profile['budget'])}")
-        if user_profile.get('spice'):
-            pref_lines.append(f"Spice Tolerance: {', '.join(user_profile['spice'])}")
-        if user_profile.get('location'):
-            pref_lines.append(f"Preferred Area: {', '.join(user_profile['location'])}")
-        if user_profile.get('notes'):
-            pref_lines.append(f"Additional Notes: {', '.join(user_profile['notes'])}")
-
-        if pref_lines:
-            prefs_str = "IMPORTANT — User's Saved Preferences:\n" + "\n".join(pref_lines)
-            prefs_str += "\n\nIf the user asks about their preferences, repeat these back to them clearly."
-        else:
-            prefs_str = "The user has not set any food preferences yet. If they ask, let them know they can set preferences via the ⚙️ settings page."
-        messages.append({"role": "system", "content": prefs_str})
-    else:
-        messages.append({"role": "system", "content": "The user has not set any food preferences yet. If they ask, let them know they can set preferences via the ⚙️ settings page."})
-
+        messages.append({"role": "system", "content": f"User Preferences to keep in mind: {user_profile}"})
+    
     if context_data:
-        context_str = "Database Results:\n"
+        # Dynamically label the data so the LLM doesn't get confused
+        if len(context_data) == 1 and context_data[0].get("name") == "Live Web Search":
+            context_str = "Live Web Search Results (You may use this to answer the user):\n"
+        else:
+            context_str = "Database Results:\n"
+            
         for place in context_data:
-            context_str += f"- {place['name']} ({place['category']}): {place['description']}\n"
+            context_str += f"- {place['name']} ({place['category']} - {place['tier']}): {place['description']}\n"
+            
         messages.append({"role": "system", "content": context_str})
     
     messages.extend(chat_history)
@@ -286,3 +317,15 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
         temperature=0.7 
     )
     return response.choices[0].message.content
+
+# Initialize free web search tool
+web_search_tool = DuckDuckGoSearchRun()
+
+def search_live_web(query):
+    print(f"   🌐 [Agent] Searching the live web for: '{query}'...")
+    try:
+        # Ask DuckDuckGo for the top snippets
+        return web_search_tool.run(query)
+    except Exception as e:
+        print(f"   ❌ Web Search Failed: {e}")
+        return "Sorry, I couldn't find those details online right now."
