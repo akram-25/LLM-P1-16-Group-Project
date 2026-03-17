@@ -205,8 +205,8 @@ def chat():
             if not is_guest:
                 db.save_search(user_id, search_query)
 
-            # --- USING THE SELF-RAG REFLECTION SEARCH ---
-            db_results = bot.reflective_search(user_input, search_query, user_profile)
+            # --- DIRECT DATABASE SEARCH (No Grader) ---
+            db_results = bot.search_cloud_db(search_query, user_profile)
 
             bot_reply = bot.generate_response_with_history(
                 user_input, chat_history, context_data=db_results, user_profile=user_profile

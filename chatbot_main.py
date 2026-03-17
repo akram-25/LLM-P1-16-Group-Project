@@ -140,20 +140,6 @@ CRITICAL RULES FOR ANSWERING (DO NOT BREAK THESE):
 4. When giving recommendations, present "Primary Selection" places as "Top Picks 🌟", and "Extended Selection" places as "More Options 🍽️".
 """
 
-GRADER_PROMPT = """
-You are a Relevance Grader for a restaurant search engine.
-User Query: "{user_query}"
-
-Retrieved Database Results:
-{context_str}
-
-Task: Evaluate if the retrieved results accurately satisfy the user's query (pay special attention to cuisines, location, and "vibe").
-- If the results are good, return: {{"relevant": true, "improved_query": ""}}
-- If the results DO NOT match (or are empty), return: {{"relevant": false, "improved_query": "new, better search keywords"}}
-
-Reply ONLY in JSON.
-"""
-
 def get_intent(user_query, chat_history=[]):
     try:
         # Convert the last 4 messages of history into a readable string for the router
@@ -188,106 +174,82 @@ def search_cloud_db(query_text, user_profile=None):
         print("   ❌ Databases not fully initialized.")
         return []
         
-    # --- UPDATED FILTER LOGIC ---
-    # We use ChromaDB's $and operator if we have multiple strict constraints
     strict_filters = []
     
+    # ONLY apply strict DB filters for dealbreakers (Health/Safety)
     if user_profile:
-        # ONLY apply strict filters for health/dealbreakers!
-        
-        # 1. Strict Diet Filter
         if user_profile.get("diet") and len(user_profile["diet"]) > 0:
             strict_filters.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
             
-        # 2. Strict Allergy Filter (Filter OUT restaurants with this allergen)
         if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
             for allergen in user_profile["allergy"]:
-                # Assuming your DB metadata has an 'allergens' list or string
                 strict_filters.append({"allergens": {"$ne": allergen.lower()}})
 
-    # Compile the final ChromaDB filter dictionary
     search_filter = None
     if len(strict_filters) == 1:
         search_filter = strict_filters[0]
     elif len(strict_filters) > 1:
         search_filter = {"$and": strict_filters}
-    # ----------------------------
 
     try:
+        # STAGE 1: Broad Vector Search (Fetch k=40 to cast a massive net)
         if search_filter:
             print(f"   ⚙️ [Filter] Applying strict Dealbreaker rules: {search_filter}")
-            primary_docs = primary_vector_db.similarity_search(query_text, k=2, filter=search_filter)
-            secondary_docs = secondary_vector_db.similarity_search(query_text, k=2, filter=search_filter)
+            primary_docs = primary_vector_db.similarity_search(query_text, k=40, filter=search_filter)
+            secondary_docs = secondary_vector_db.similarity_search(query_text, k=40, filter=search_filter)
         else:
-            print("   ⚙️ [Filter] No strict dealbreakers. Doing open search.")
-            primary_docs = primary_vector_db.similarity_search(query_text, k=2)
-            secondary_docs = secondary_vector_db.similarity_search(query_text, k=2)
+            primary_docs = primary_vector_db.similarity_search(query_text, k=40)
+            secondary_docs = secondary_vector_db.similarity_search(query_text, k=40)
             
-        # ... [Rest of your function mapping docs to clean_results remains the same] ...
-            
-        clean_results = []
-        
-        # 1. Process the 2 Primary Results
+        # Combine all 80 results into a single pool
+        all_docs = []
         for doc in primary_docs:
-            info = {
-                "name": doc.metadata.get('name', 'Unknown Place'),
-                "category": doc.metadata.get('category', 'Food'),
-                "tier": "Primary Selection", # Optional: Helps LLM know it's a top pick
-                "description": doc.page_content
-            }
-            clean_results.append(info)
-
-        # 2. Process the 2 Secondary Results
+            all_docs.append({"tier": "Primary Selection", "doc": doc})
         for doc in secondary_docs:
-            info = {
+            all_docs.append({"tier": "Extended Selection", "doc": doc})
+
+        # STAGE 2: Lightweight Lexical Reranker
+        query_words = set(query_text.lower().split())
+        scored_results = []
+        
+        for item in all_docs:
+            doc = item["doc"]
+            restaurant_name = doc.metadata.get('name', 'Unknown Place').lower()
+            
+            score = 0 
+            
+            # Massive boost if the exact prompt is in the name
+            if query_text.lower() in restaurant_name:
+                score += 500 
+                
+            # Strong boost for partial name matches
+            for word in query_words:
+                if len(word) > 3 and word in restaurant_name: 
+                    score += 100
+                    
+            scored_results.append({
+                "score": score,
                 "name": doc.metadata.get('name', 'Unknown Place'),
                 "category": doc.metadata.get('category', 'Food'),
-                "tier": "Extended Selection", 
+                "tier": item["tier"],
                 "description": doc.page_content
-            }
-            clean_results.append(info)
-            
-        print(f"   ✅ [Search] Retrieved {len(primary_docs)} Primary and {len(secondary_docs)} Secondary results.")
+            })
+
+        # Sort the results so the highest scores (exact matches) bubble to the top
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+        
+        # STAGE 3: Return the top 4 absolute best results to the LLM
+        final_results = scored_results[:4]
+        
+        # Clean up the output so we don't send the raw 'score' integer to the LLM
+        clean_results = [{"name": r["name"], "category": r["category"], "tier": r["tier"], "description": r["description"]} for r in final_results]
+        
+        print(f"   ✅ [Search] Reranked {len(all_docs)} docs. Top match score: {scored_results[0]['score'] if scored_results else 0}")
         return clean_results
         
     except Exception as e:
         print(f"   ❌ DB Search Failed: {e}")
         return []
-
-def reflective_search(user_input, initial_keywords, user_profile=None):
-    print(f"   🔎 [Agent] Searching Cloud DB for: '{initial_keywords}'...")
-    results = search_cloud_db(initial_keywords, user_profile)
-    
-    context_str = ""
-    if results:
-        for r in results:
-            context_str += f"- {r['name']} ({r['category']}): {r['description']}\n"
-    else:
-        context_str = "No results found."
-
-    print("   🤔 [Reflection] Grading the search results...")
-    grader_msg = GRADER_PROMPT.format(user_query=user_input, context_str=context_str)
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo", 
-            messages=[{"role": "system", "content": grader_msg}],
-            temperature=0,
-            response_format={"type": "json_object"}
-        )
-        grade = json.loads(response.choices[0].message.content)
-        
-        if grade.get("relevant") == True and results:
-            print("   ✅ [Reflection] Results look good. Proceeding.")
-            return results
-        else:
-            new_query = grade.get("improved_query", initial_keywords)
-            print(f"   🔄 [Reflection] Results poor. Retrying DB search with: '{new_query}'")
-            return search_cloud_db(new_query, user_profile)
-            
-    except Exception as e:
-        print(f"   ⚠️ [Grader Error] {e}. Falling back to first attempt.")
-        return results
 
 def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
