@@ -315,6 +315,7 @@
             <div class="section-title">💰 Budget Range</div>
             <div class="section-desc">How much do you usually spend per meal?</div>
             <div class="select-group" id="budget-options">
+                <button class="select-option selected" data-value="Any">Any</button>
                 <button class="select-option" data-value="$5 and under">$5 &amp; under</button>
                 <button class="select-option" data-value="$5-$10">$5–$10</button>
                 <button class="select-option" data-value="$10-$20">$10–$20</button>
@@ -328,6 +329,7 @@
             <div class="section-title">🌶️ Spice Tolerance</div>
             <div class="section-desc">How spicy can you handle?</div>
             <div class="select-group" id="spice-options">
+                <button class="select-option selected" data-value="Any">Any</button>
                 <button class="select-option" data-value="No Spice">No spice</button>
                 <button class="select-option" data-value="Mild">Mild</button>
                 <button class="select-option" data-value="Medium">Medium</button>
@@ -502,23 +504,17 @@
                     });
                 }
                 // Budget
-                if (prefs.budget && prefs.budget.length > 0) {
-                    const budgetVal = prefs.budget[0];
-                    document.querySelectorAll('#budget-options .select-option').forEach(btn => {
-                        if (btn.dataset.value === budgetVal) {
-                            btn.classList.add('selected');
-                        }
-                    });
-                }
+                document.querySelectorAll('#budget-options .select-option').forEach(b => b.classList.remove('selected'));
+                const budgetVal = (prefs.budget && prefs.budget.length > 0) ? prefs.budget[0] : 'Any';
+                document.querySelectorAll('#budget-options .select-option').forEach(btn => {
+                    if (btn.dataset.value === budgetVal) btn.classList.add('selected');
+                });
                 // Spice
-                if (prefs.spice && prefs.spice.length > 0) {
-                    const spiceVal = prefs.spice[0];
-                    document.querySelectorAll('#spice-options .select-option').forEach(btn => {
-                        if (btn.dataset.value === spiceVal) {
-                            btn.classList.add('selected');
-                        }
-                    });
-                }
+                document.querySelectorAll('#spice-options .select-option').forEach(b => b.classList.remove('selected'));
+                const spiceVal = (prefs.spice && prefs.spice.length > 0) ? prefs.spice[0] : 'Any';
+                document.querySelectorAll('#spice-options .select-option').forEach(btn => {
+                    if (btn.dataset.value === spiceVal) btn.classList.add('selected');
+                });
                 // Notes
                 if (prefs.notes && prefs.notes.length > 0) {
                     document.getElementById('notes-input').value = prefs.notes.join('\n');
@@ -550,13 +546,13 @@
         });
         if (dietVals.length > 0) prefs.diet = dietVals;
 
-        // Budget (single-select)
+        // Budget (single-select, skip "Any" as it means no restriction)
         const budgetBtn = document.querySelector('#budget-options .select-option.selected');
-        if (budgetBtn) prefs.budget = [budgetBtn.dataset.value];
+        if (budgetBtn && budgetBtn.dataset.value !== 'Any') prefs.budget = [budgetBtn.dataset.value];
 
-        // Spice (single-select)
+        // Spice (single-select, skip "Any" as it means no restriction)
         const spiceBtn = document.querySelector('#spice-options .select-option.selected');
-        if (spiceBtn) prefs.spice = [spiceBtn.dataset.value];
+        if (spiceBtn && spiceBtn.dataset.value !== 'Any') prefs.spice = [spiceBtn.dataset.value];
 
         // Notes
         const notes = document.getElementById('notes-input').value.trim();
