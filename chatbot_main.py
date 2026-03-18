@@ -1,12 +1,13 @@
 import os
+import sys
 import json
 from dotenv import load_dotenv
 
+sys.stdout.reconfigure(encoding='utf-8')
+
 from openai import OpenAI
-from langchain_chroma import Chroma 
 from langchain_openai import OpenAIEmbeddings
-import chromadb
-from chromadb.config import Settings
+from langchain_postgres import PGVector
 
 from langchain_community.tools import DuckDuckGoSearchRun
 
@@ -15,46 +16,36 @@ from langchain_community.tools import DuckDuckGoSearchRun
 # ==========================================
 load_dotenv('apikeys.env')
 
-CHROMA_SERVER_URL = os.getenv('CHROMA_SERVER_URL')
-CHROMA_API_TOKEN = os.getenv('CHROMA_API_TOKEN')
-
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-print("🔗 Connecting to Cloud Memory...")
+PG_CONNECTION = (
+    f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}"
+    f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+)
 
-chroma_auth_client = None
-try:
-    chroma_auth_client = chromadb.HttpClient(
-        host=CHROMA_SERVER_URL,
-        port=443,
-        ssl=True,
-        settings=Settings(
-            chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
-            chroma_client_auth_credentials=CHROMA_API_TOKEN,
-            anonymized_telemetry=False
-        )
-    )
-    chroma_auth_client.heartbeat()
-    print("   ✅ Server reachable.")
-except Exception as e:
-    print(f"\n🛑 WARNING: Could not connect to Database. {e}")
+print("🔗 Connecting to PostgreSQL vector store...")
 
 embedding_fn = OpenAIEmbeddings(
     model="text-embedding-3-small",
     openai_api_key=os.getenv('OPENAI_API_KEY')
 )
 
-primary_vector_db = Chroma(
-    client=chroma_auth_client,
-    collection_name="foodkaki_restaurants",
-    embedding_function=embedding_fn
-) if chroma_auth_client else None
-
-secondary_vector_db = Chroma(
-    client=chroma_auth_client,
-    collection_name="foodkaki_restaurants_secondary",
-    embedding_function=embedding_fn
-) if chroma_auth_client else None
+try:
+    primary_vector_db = PGVector(
+        connection=PG_CONNECTION,
+        collection_name="foodkaki_restaurants",
+        embeddings=embedding_fn,
+    )
+    secondary_vector_db = PGVector(
+        connection=PG_CONNECTION,
+        collection_name="foodkaki_restaurants_secondary",
+        embeddings=embedding_fn,
+    )
+    print("   ✅ Vector store connected.")
+except Exception as e:
+    print(f"\n🛑 WARNING: Could not connect to vector store. {e}")
+    primary_vector_db = None
+    secondary_vector_db = None
 
 
 # ==========================================
@@ -174,22 +165,21 @@ def search_cloud_db(query_text, user_profile=None):
         print("   ❌ Databases not fully initialized.")
         return []
         
-    strict_filters = []
-    
+    filter_clauses = []
+
     # ONLY apply strict DB filters for dealbreakers (Health/Safety)
     if user_profile:
         if user_profile.get("diet") and len(user_profile["diet"]) > 0:
-            strict_filters.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
-            
+            filter_clauses.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
         if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
             for allergen in user_profile["allergy"]:
-                strict_filters.append({"allergens": {"$ne": allergen.lower()}})
+                filter_clauses.append({"allergens": {"$ne": allergen.lower()}})
 
     search_filter = None
-    if len(strict_filters) == 1:
-        search_filter = strict_filters[0]
-    elif len(strict_filters) > 1:
-        search_filter = {"$and": strict_filters}
+    if len(filter_clauses) == 1:
+        search_filter = filter_clauses[0]
+    elif len(filter_clauses) > 1:
+        search_filter = {"$and": filter_clauses}
 
     try:
         # STAGE 1: Broad Vector Search (Fetch k=40 to cast a massive net)

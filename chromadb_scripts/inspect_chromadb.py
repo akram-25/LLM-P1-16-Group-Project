@@ -1,55 +1,59 @@
 """
-Inspect both ChromaDB collections - view stats and sample data.
-Usage: python inspect_chromadb.py
+Inspect both pgvector collections - view stats and sample data.
+Usage: python chromadb_scripts/inspect_chromadb.py
 """
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
-import chromadb
-from chromadb.config import Settings
+import psycopg
 
-load_dotenv('apikeys.env')
+ROOT = Path(__file__).parent.parent
+load_dotenv(ROOT / 'apikeys.env')
 
-print("=" * 60)
-print("  ChromaDB Collection Inspector")
-print("=" * 60)
-
-client = chromadb.HttpClient(
-    host=os.getenv('CHROMA_SERVER_URL'),
-    port=443,
-    ssl=True,
-    settings=Settings(
-        chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
-        chroma_client_auth_credentials=os.getenv('CHROMA_API_TOKEN'),
-        anonymized_telemetry=False
-    )
+PG_CONNECTION = (
+    f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}"
+    f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
 )
 
-client.heartbeat()
-print("\n✅ Connected to ChromaDB server\n")
+COLLECTIONS = ["foodkaki_restaurants", "foodkaki_restaurants_secondary"]
 
-collections = client.list_collections()
-print(f"📦 Total collections: {len(collections)}")
-print("-" * 60)
+print("=" * 60)
+print("  pgvector Collection Inspector")
+print("=" * 60)
 
-for col_info in collections:
-    col = client.get_collection(col_info.name)
-    count = col.count()
-    print(f"\n📁 Collection: {col_info.name}")
-    print(f"   Documents: {count}")
+with psycopg.connect(PG_CONNECTION) as conn:
+    print("\n✅ Connected to PostgreSQL\n")
 
-    # Peek at first 3 documents
-    if count > 0:
-        sample = col.peek(limit=3)
-        print(f"   Sample entries:")
-        for i, doc_id in enumerate(sample['ids']):
-            meta = sample['metadatas'][i] if sample['metadatas'] else {}
-            content = (sample['documents'][i][:120] + "...") if sample['documents'] and sample['documents'][i] else "N/A"
-            name = meta.get('name', 'Unknown')
-            rating = meta.get('rating', 'N/A')
-            address = meta.get('address', 'N/A')
-            print(f"\n   [{i+1}] {name}")
-            print(f"       Rating: {rating} | Address: {address}")
-            print(f"       Preview: {content}")
+    for collection_name in COLLECTIONS:
+        print(f"\n📁 Collection: {collection_name}")
 
-    print("-" * 60)
+        # Count documents in this collection
+        row = conn.execute("""
+            SELECT COUNT(*) FROM langchain_pg_embedding e
+            JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+            WHERE c.name = %s
+        """, (collection_name,)).fetchone()
+
+        count = row[0] if row else 0
+        print(f"   Documents: {count}")
+
+        if count > 0:
+            samples = conn.execute("""
+                SELECT e.cmetadata, e.document FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                WHERE c.name = %s
+                LIMIT 3
+            """, (collection_name,)).fetchall()
+
+            print(f"   Sample entries:")
+            for i, (meta, content) in enumerate(samples):
+                name = meta.get('name', 'Unknown') if meta else 'Unknown'
+                rating = meta.get('rating', 'N/A') if meta else 'N/A'
+                address = meta.get('address', 'N/A') if meta else 'N/A'
+                preview = (content[:120] + "...") if content and len(content) > 120 else content
+                print(f"\n   [{i+1}] {name}")
+                print(f"       Rating: {rating} | Address: {address}")
+                print(f"       Preview: {preview}")
+
+        print("-" * 60)

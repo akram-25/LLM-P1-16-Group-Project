@@ -1,75 +1,46 @@
 """
-Repopulate the original 'foodkaki_restaurants' collection
-using food_places_primary.csv data.
+Populate the 'foodkaki_restaurants' collection in PostgreSQL (pgvector)
+using food_places/food_places_primary.csv data.
 
-Usage: python create_primary_chromadb.py
+Usage: python chromadb_scripts/create_primary_chromadb.py
 """
 
 import os
 import csv
+from pathlib import Path
 from dotenv import load_dotenv
 
-import chromadb
-from chromadb.config import Settings
-from langchain_chroma import Chroma
+from langchain_postgres import PGVector
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 
 # ==========================================
 # 1. LOAD CONFIG
 # ==========================================
-load_dotenv('apikeys.env')
+ROOT = Path(__file__).parent.parent
+load_dotenv(ROOT / 'apikeys.env')
 
-CHROMA_SERVER_URL = os.getenv('CHROMA_SERVER_URL')
-CHROMA_API_TOKEN = os.getenv('CHROMA_API_TOKEN')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+PG_CONNECTION = (
+    f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}"
+    f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+)
 
-CSV_FILE = "food_places_primary.csv"
+CSV_FILE = ROOT / 'food_places' / 'food_places_primary.csv'
 COLLECTION_NAME = "foodkaki_restaurants"
 BATCH_SIZE = 50
 
 # ==========================================
-# 2. CONNECT TO CLOUD CHROMADB
+# 2. SETUP EMBEDDING FUNCTION
 # ==========================================
-print("🔗 Connecting to Cloud ChromaDB...")
+print("🔗 Connecting to PostgreSQL...")
 
-chroma_auth_client = chromadb.HttpClient(
-    host=CHROMA_SERVER_URL,
-    port=443,
-    ssl=True,
-    settings=Settings(
-        chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
-        chroma_client_auth_credentials=CHROMA_API_TOKEN,
-        anonymized_telemetry=False
-    )
-)
-
-chroma_auth_client.heartbeat()
-print("   ✅ Connected to ChromaDB server.")
-
-existing = [c.name for c in chroma_auth_client.list_collections()]
-print(f"   📦 Existing collections: {existing}")
-
-if COLLECTION_NAME in existing:
-    col = chroma_auth_client.get_collection(COLLECTION_NAME)
-    count = col.count()
-    if count > 0:
-        print(f"   ⚠️  Collection '{COLLECTION_NAME}' has {count} docs. Deleting and recreating...")
-    else:
-        print(f"   ⚠️  Collection '{COLLECTION_NAME}' exists but is empty. Deleting and recreating...")
-    chroma_auth_client.delete_collection(COLLECTION_NAME)
-    print(f"   🗑️  Deleted old collection.")
-
-# ==========================================
-# 3. SETUP EMBEDDING FUNCTION
-# ==========================================
 embedding_fn = OpenAIEmbeddings(
     model="text-embedding-3-small",
-    openai_api_key=OPENAI_API_KEY
+    openai_api_key=os.getenv('OPENAI_API_KEY')
 )
 
 # ==========================================
-# 4. READ CSV AND CREATE DOCUMENTS
+# 3. READ CSV AND CREATE DOCUMENTS
 # ==========================================
 print(f"\n📄 Reading {CSV_FILE}...")
 
@@ -106,42 +77,34 @@ with open(CSV_FILE, 'r', encoding='utf-8') as f:
             "gmaps_place_id": row.get('gmaps_place_id', ''),
         }
 
-        doc = Document(page_content=page_content, metadata=metadata)
-        documents.append(doc)
+        documents.append(Document(page_content=page_content, metadata=metadata))
 
 print(f"   ✅ Loaded {len(documents)} restaurant records.")
 
 # ==========================================
-# 5. UPLOAD IN BATCHES
+# 4. UPLOAD IN BATCHES
 # ==========================================
-print(f"\n🚀 Uploading to collection '{COLLECTION_NAME}' in batches of {BATCH_SIZE}...")
+print(f"\n🚀 Uploading to '{COLLECTION_NAME}' in batches of {BATCH_SIZE}...")
 
 total_batches = (len(documents) + BATCH_SIZE - 1) // BATCH_SIZE
+vector_db = None
 
 for i in range(0, len(documents), BATCH_SIZE):
     batch = documents[i:i + BATCH_SIZE]
     batch_num = (i // BATCH_SIZE) + 1
 
     if i == 0:
-        vector_db = Chroma.from_documents(
+        # First batch: create collection fresh (pre_delete_collection wipes any existing data)
+        vector_db = PGVector.from_documents(
             documents=batch,
             embedding=embedding_fn,
-            client=chroma_auth_client,
-            collection_name=COLLECTION_NAME
+            connection=PG_CONNECTION,
+            collection_name=COLLECTION_NAME,
+            pre_delete_collection=True,
         )
     else:
         vector_db.add_documents(batch)
 
     print(f"   📦 Batch {batch_num}/{total_batches} uploaded ({len(batch)} docs)")
 
-# ==========================================
-# 6. VERIFY
-# ==========================================
-print(f"\n✅ Done! Collection '{COLLECTION_NAME}' repopulated with {len(documents)} documents.")
-
-collection = chroma_auth_client.get_collection(COLLECTION_NAME)
-count = collection.count()
-print(f"   📊 Verification: {count} documents in collection.")
-
-final_collections = [c.name for c in chroma_auth_client.list_collections()]
-print(f"   📦 All collections: {final_collections}")
+print(f"\n✅ Done! '{COLLECTION_NAME}' populated with {len(documents)} documents.")
