@@ -136,18 +136,36 @@
             transition: background 0.2s;
         }
         button.send-btn:hover { background-color: #ff5252; }
+        /* --- NEW ANIMATED TYPING INDICATOR --- */
         .typing-indicator {
-            font-style: italic;
-            color: #aaa;
-            font-size: 0.8rem;
-            margin: 0 0 15px 15px;
-            display: none; 
+            display: none;
+            background-color: #eeeeee; /* Matches your bot-message bubble */
+            padding: 12px 16px;
+            border-radius: 20px;
+            border-bottom-left-radius: 0;
+            margin-bottom: 15px;
             align-self: flex-start;
+            width: fit-content;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #888;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out both;
         }
+
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        /* -------------------------------------- */
     </style>
 </head>
 <body>
@@ -163,7 +181,11 @@
         </div>
     </div>
     <div class="chat-messages" id="chat-box">
-        <div class="typing-indicator" id="typing">Chatbot is typing...</div>
+        <div class="typing-indicator" id="typing">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+        </div>
     </div>
     <div class="input-area">
         <input type="text" id="user-input" placeholder="Type your message..." onkeypress="handleEnter(event)" autocomplete="off">

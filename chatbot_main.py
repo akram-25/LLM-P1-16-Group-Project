@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding='utf-8')
 
+from prompts import INTENT_PROMPT, PERSONA_PROMPT
+
 from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
@@ -85,53 +87,6 @@ def save_user_preference(username, key, value):
     with open(USER_DB_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-
-# ==========================================
-# 3. THE BRAIN (System Prompts & Router)
-# ==========================================
-INTENT_PROMPT = """
-You are the "Router" for a Singapore food chatbot.
-Classify the user's input into one of these intents based on the User Query and the Recent Chat History.
-
-1. SEARCH: User asks for food recommendations, details, location, prices, or "vibe".
-   - **CRITICAL**: Resolve pronouns using history.
-   - **NEW RULE - QUERY EXPANSION**: If the user asks for a region (e.g., "East", "North"), expand the 'keywords' to include actual neighborhood names (e.g., "Bedok, Tampines, Pasir Ris, Changi" for East). If they say "hawker", expand to "hawker centre, food court, local".
-   - **NEW RULE - TARGETING**: If the user is looking for a SPECIFIC proper noun restaurant (e.g., "McDonalds", "Ah Seng Durian"), extract it into 'target_restaurant'. If they are asking for general cuisines or locations, leave it as null.
-   - Return: {"intent": "SEARCH", "keywords": "expanded search terms", "target_restaurant": "Exact Name or null"}
-
-2. LIVE_SEARCH: User asks for operational details like opening hours, phone numbers, or exact addresses.
-   - **CRITICAL**: Resolve pronouns using history. Always include the restaurant name and the specific detail requested in the query.
-   - Example: {"intent": "LIVE_SEARCH", "query": "Ah Seng Durian opening hours and phone number Singapore"}
-   - Return: {"intent": "LIVE_SEARCH", "query": "exact search terms"}
-
-3. SAVE_PREF: User states a personal fact or identity.
-   - Return: {"intent": "SAVE_PREF", "key": "STANDARD_KEY", "value": "extracted value"}
-
-4. SAVE_FAVORITE: User asks to save or bookmark a specific restaurant.
-   - Return: {"intent": "SAVE_FAVORITE", "restaurant_name": "Extracted Name"}
-
-5. CHAT: Social greetings, small talk, OR questions about the user's own history/profile.
-   - Return: {"intent": "CHAT"}
-
-6. BLOCK: Topics CLEARLY NOT related to food/dining/profile.
-   - Return: {"intent": "BLOCK"}
-
-Reply ONLY JSON.
-"""
-
-PERSONA_PROMPT = """
-You are a helpful Singaporean food chatbot.
-- Speak in natural Singlish (use "lah", "lor", "shiok", "paiseh", "can").
-- Be friendly but concise.
-- Use the User History to remember what we just talked about.
-
-CRITICAL RULES FOR ANSWERING (DO NOT BREAK THESE):
-1. FOR RECOMMENDATIONS: STRICTLY base your restaurant suggestions ONLY on the provided "Database Results" (Primary or Extended Selection). 
-2. FOR OPERATIONAL INFO (Hours, Phone, Address): If the context includes "Live Web Search", you are AUTHORIZED to use that information to answer the user's specific question. Say something like, "I just checked online for you..."
-3. NEVER invent or hallucinate information. If the Database Results or Web Search Results are empty, you MUST apologize and say you don't know.
-4. When giving recommendations, present "Primary Selection" places as "Top Picks 🌟", and "Extended Selection" places as "More Options 🍽️".
-"""
-
 def get_intent(user_query, chat_history=[]):
     try:
         history_text = "None"
@@ -198,18 +153,15 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
         for i, doc in enumerate(secondary_docs):
             all_docs.append({"tier": "Extended Selection", "doc": doc, "base_score": 40 - i})
 
-        # STAGE 2: AI-Driven Lexical Reranker, Booster & Multiplier
+        # STAGE 2: AI-Driven Lexical Reranker, Quality Booster & Multiplier
         scored_results = []
         
-        # Extract the user's favorite cuisines safely
         favorite_cuisines = []
         if user_profile and user_profile.get("cuisine"):
             favorite_cuisines = [c.lower() for c in user_profile["cuisine"]]
         
-        # Define stop words so we don't boost generic filler
-        stop_words = {"find", "me", "in", "the", "a", "some", "good", "food", "place", "restaurant", "for", "and", "or", "near", "around", "at"}
+        stop_words = {"find", "me", "in", "the", "a", "some", "good", "food", "place", "restaurant", "for", "and", "or", "near", "around", "at", "best", "cheap"}
         
-        # Clean commas out of the Router's expanded query
         clean_query = query_text.lower().replace(',', '').replace('.', '')
         query_words = set(clean_query.split())
         
@@ -219,13 +171,17 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             category_tags = doc.metadata.get('category', '').lower()
             address_text = doc.metadata.get('address', '').lower()
             
+            # Extract Rating and Review Count for Quality Control
+            rating = float(doc.metadata.get('rating', 0.0))
+            review_count = int(doc.metadata.get('user_rating_count', 0))
+            
             score = item["base_score"] 
             
             # --- 1. DYNAMIC EXACT NAME MATCHING ---
             if target_restaurant:
                 target_lower = target_restaurant.lower()
                 if target_lower in restaurant_name:
-                    score += 500 # Explicit search always wins
+                    score += 500 
                 for word in target_lower.split():
                     if len(word) > 2 and word in restaurant_name: 
                         score += 100
@@ -236,7 +192,9 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             
             for word in query_words:
                 if len(word) > 2 and word not in stop_words:
-                    if word in category_tags or word in restaurant_name:
+                    # FIX: We NO LONGER check the restaurant name here! 
+                    # We only check if the word is actually in the category/tags.
+                    if word in category_tags:
                         category_hits += 1
                     if word in address_text:
                         address_hits += 1
@@ -246,7 +204,6 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             if address_hits > 0:
                 score += 50
                 
-            # THE JACKPOT: Perfect match for Cuisine AND Location
             if category_hits > 0 and address_hits > 0:
                 score += 150 
             
@@ -254,6 +211,18 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             for fav_cuisine in favorite_cuisines:
                 if fav_cuisine in category_tags:
                     score += 20 
+
+            # --- 4. THE QUALITY MULTIPLIER (The "Best Options" Fix) ---
+            # Reward places with genuinely good ratings
+            if rating >= 4.0:
+                # E.g., a 4.8 rating gets +16 points, a 4.1 gets +2 points
+                score += (rating - 4.0) * 20 
+                
+                # Bonus points if they have a lot of reviews (proven consistency)
+                if review_count > 100:
+                    score += 10
+                if review_count > 500:
+                    score += 15
                     
             scored_results.append({
                 "score": score,
