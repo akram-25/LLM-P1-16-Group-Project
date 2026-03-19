@@ -198,13 +198,19 @@ def search_cloud_db(query_text, user_profile=None):
         for doc in secondary_docs:
             all_docs.append({"tier": "Extended Selection", "doc": doc})
 
-        # STAGE 2: Lightweight Lexical Reranker
+        # STAGE 2: Lightweight Lexical Reranker & Preference Booster
         query_words = set(query_text.lower().split())
         scored_results = []
+        
+        # --- NEW: Extract the user's favorite cuisines safely ---
+        favorite_cuisines = []
+        if user_profile and user_profile.get("cuisine"):
+            favorite_cuisines = [c.lower() for c in user_profile["cuisine"]]
         
         for item in all_docs:
             doc = item["doc"]
             restaurant_name = doc.metadata.get('name', 'Unknown Place').lower()
+            category_tags = doc.metadata.get('category', '').lower()
             
             score = 0 
             
@@ -216,6 +222,12 @@ def search_cloud_db(query_text, user_profile=None):
             for word in query_words:
                 if len(word) > 3 and word in restaurant_name: 
                     score += 100
+            
+            # --- NEW: Soft Preference Boosting ---
+            # If the restaurant's tags match the user's profile, boost it up the list!
+            for fav_cuisine in favorite_cuisines:
+                if fav_cuisine in category_tags:
+                    score += 50
                     
             scored_results.append({
                 "score": score,
@@ -225,7 +237,7 @@ def search_cloud_db(query_text, user_profile=None):
                 "description": doc.page_content
             })
 
-        # Sort the results so the highest scores (exact matches) bubble to the top
+        # Sort the results so the highest scores (exact matches & favorites) bubble to the top
         scored_results.sort(key=lambda x: x["score"], reverse=True)
         
         # STAGE 3: Return the top 4 absolute best results to the LLM
@@ -259,6 +271,11 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
             context_str += f"- {place['name']} ({place['category']} - {place['tier']}): {place['description']}\n"
             
         messages.append({"role": "system", "content": context_str})
+        
+    # --- NEW: ANTI-HALLUCINATION LOCK ---
+    else:
+        # If no context was found, FORCE the LLM to apologize.
+        messages.append({"role": "system", "content": "Database Results: NONE FOUND. You MUST apologize to the user and ask them to try different keywords. Do not recommend any real or fake places."})
     
     messages.extend(chat_history)
     messages.append({"role": "user", "content": new_user_input})
