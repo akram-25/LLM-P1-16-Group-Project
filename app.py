@@ -200,13 +200,13 @@ def chat():
         # 3. Execute Logic
         if intent == "SEARCH":
             search_query = decision.get("keywords", user_input)
+            target_restaurant = decision.get("target_restaurant") # <-- GRAB THIS
 
-            # Log the search
             if not is_guest:
                 db.save_search(user_id, search_query)
 
-            # --- DIRECT DATABASE SEARCH (No Grader) ---
-            db_results = bot.search_cloud_db(search_query, user_profile)
+            # Pass the new variable so exact matches work!
+            db_results = bot.search_cloud_db(search_query, user_profile, target_restaurant)
 
             bot_reply = bot.generate_response_with_history(
                 user_input, chat_history, context_data=db_results, user_profile=user_profile

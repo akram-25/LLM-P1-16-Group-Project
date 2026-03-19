@@ -8,7 +8,6 @@ sys.stdout.reconfigure(encoding='utf-8')
 from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
-
 from langchain_community.tools import DuckDuckGoSearchRun
 
 # ==========================================
@@ -96,7 +95,9 @@ Classify the user's input into one of these intents based on the User Query and 
 
 1. SEARCH: User asks for food recommendations, details, location, prices, or "vibe".
    - **CRITICAL**: Resolve pronouns using history.
-   - Return: {"intent": "SEARCH", "keywords": "search terms"}
+   - **NEW RULE - QUERY EXPANSION**: If the user asks for a region (e.g., "East", "North"), expand the 'keywords' to include actual neighborhood names (e.g., "Bedok, Tampines, Pasir Ris, Changi" for East). If they say "hawker", expand to "hawker centre, food court, local".
+   - **NEW RULE - TARGETING**: If the user is looking for a SPECIFIC proper noun restaurant (e.g., "McDonalds", "Ah Seng Durian"), extract it into 'target_restaurant'. If they are asking for general cuisines or locations, leave it as null.
+   - Return: {"intent": "SEARCH", "keywords": "expanded search terms", "target_restaurant": "Exact Name or null"}
 
 2. LIVE_SEARCH: User asks for operational details like opening hours, phone numbers, or exact addresses.
    - **CRITICAL**: Resolve pronouns using history. Always include the restaurant name and the specific detail requested in the query.
@@ -133,14 +134,11 @@ CRITICAL RULES FOR ANSWERING (DO NOT BREAK THESE):
 
 def get_intent(user_query, chat_history=[]):
     try:
-        # Convert the last 4 messages of history into a readable string for the router
         history_text = "None"
         if chat_history:
-            # Grab just the last few turns so we don't waste tokens
             recent_context = chat_history[-4:] 
             history_text = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in recent_context])
 
-        # Inject the history into the system prompt
         dynamic_system_prompt = INTENT_PROMPT + f"\n\n--- RECENT CHAT HISTORY ---\n{history_text}"
 
         response = client.chat.completions.create(
@@ -158,9 +156,9 @@ def get_intent(user_query, chat_history=[]):
         return {"intent": "CHAT"}
 
 # ==========================================
-# 4. CORE FUNCTIONS (RAG, Reflection & Generation)
+# 4. CORE FUNCTIONS (RAG & Generation)
 # ==========================================
-def search_cloud_db(query_text, user_profile=None):
+def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
     if not primary_vector_db or not secondary_vector_db:
         print("   ❌ Databases not fully initialized.")
         return []
@@ -171,9 +169,11 @@ def search_cloud_db(query_text, user_profile=None):
     if user_profile:
         if user_profile.get("diet") and len(user_profile["diet"]) > 0:
             filter_clauses.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
-        if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
-            for allergen in user_profile["allergy"]:
-                filter_clauses.append({"allergens": {"$ne": allergen.lower()}})
+        
+        # TEMPORARILY DISABLED: Re-enable once 'allergens' metadata exists in DB
+        # if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
+        #     for allergen in user_profile["allergy"]:
+        #         filter_clauses.append({"allergens": {"$ne": allergen.lower()}})
 
     search_filter = None
     if len(filter_clauses) == 1:
@@ -182,7 +182,7 @@ def search_cloud_db(query_text, user_profile=None):
         search_filter = {"$and": filter_clauses}
 
     try:
-        # STAGE 1: Broad Vector Search (Fetch k=40 to cast a massive net)
+        # STAGE 1: Broad Vector Search
         if search_filter:
             print(f"   ⚙️ [Filter] Applying strict Dealbreaker rules: {search_filter}")
             primary_docs = primary_vector_db.similarity_search(query_text, k=40, filter=search_filter)
@@ -191,43 +191,69 @@ def search_cloud_db(query_text, user_profile=None):
             primary_docs = primary_vector_db.similarity_search(query_text, k=40)
             secondary_docs = secondary_vector_db.similarity_search(query_text, k=40)
             
-        # Combine all 80 results into a single pool
+        # Combine all 80 results AND preserve their Vector Search ranking!
         all_docs = []
-        for doc in primary_docs:
-            all_docs.append({"tier": "Primary Selection", "doc": doc})
-        for doc in secondary_docs:
-            all_docs.append({"tier": "Extended Selection", "doc": doc})
+        for i, doc in enumerate(primary_docs):
+            all_docs.append({"tier": "Primary Selection", "doc": doc, "base_score": 40 - i})
+        for i, doc in enumerate(secondary_docs):
+            all_docs.append({"tier": "Extended Selection", "doc": doc, "base_score": 40 - i})
 
-        # STAGE 2: Lightweight Lexical Reranker & Preference Booster
-        query_words = set(query_text.lower().split())
+        # STAGE 2: AI-Driven Lexical Reranker, Booster & Multiplier
         scored_results = []
         
-        # --- NEW: Extract the user's favorite cuisines safely ---
+        # Extract the user's favorite cuisines safely
         favorite_cuisines = []
         if user_profile and user_profile.get("cuisine"):
             favorite_cuisines = [c.lower() for c in user_profile["cuisine"]]
+        
+        # Define stop words so we don't boost generic filler
+        stop_words = {"find", "me", "in", "the", "a", "some", "good", "food", "place", "restaurant", "for", "and", "or", "near", "around", "at"}
+        
+        # Clean commas out of the Router's expanded query
+        clean_query = query_text.lower().replace(',', '').replace('.', '')
+        query_words = set(clean_query.split())
         
         for item in all_docs:
             doc = item["doc"]
             restaurant_name = doc.metadata.get('name', 'Unknown Place').lower()
             category_tags = doc.metadata.get('category', '').lower()
+            address_text = doc.metadata.get('address', '').lower()
             
-            score = 0 
+            score = item["base_score"] 
             
-            # Massive boost if the exact prompt is in the name
-            if query_text.lower() in restaurant_name:
-                score += 500 
-                
-            # Strong boost for partial name matches
+            # --- 1. DYNAMIC EXACT NAME MATCHING ---
+            if target_restaurant:
+                target_lower = target_restaurant.lower()
+                if target_lower in restaurant_name:
+                    score += 500 # Explicit search always wins
+                for word in target_lower.split():
+                    if len(word) > 2 and word in restaurant_name: 
+                        score += 100
+            
+            # --- 2. THE INTERSECTION MULTIPLIER ---
+            category_hits = 0
+            address_hits = 0
+            
             for word in query_words:
-                if len(word) > 3 and word in restaurant_name: 
-                    score += 100
+                if len(word) > 2 and word not in stop_words:
+                    if word in category_tags or word in restaurant_name:
+                        category_hits += 1
+                    if word in address_text:
+                        address_hits += 1
+
+            if category_hits > 0:
+                score += 50
+            if address_hits > 0:
+                score += 50
+                
+            # THE JACKPOT: Perfect match for Cuisine AND Location
+            if category_hits > 0 and address_hits > 0:
+                score += 150 
             
-            # --- NEW: Soft Preference Boosting ---
-            # If the restaurant's tags match the user's profile, boost it up the list!
+            # --- 3. SOFT PREFERENCE BOOSTING ---
             for fav_cuisine in favorite_cuisines:
                 if fav_cuisine in category_tags:
-                    score += 50
+                    score += 20 
                     
             scored_results.append({
                 "score": score,
@@ -237,16 +263,32 @@ def search_cloud_db(query_text, user_profile=None):
                 "description": doc.page_content
             })
 
-        # Sort the results so the highest scores (exact matches & favorites) bubble to the top
+        # Sort ALL results so the absolute best matches bubble to the top
         scored_results.sort(key=lambda x: x["score"], reverse=True)
         
-        # STAGE 3: Return the top 4 absolute best results to the LLM
-        final_results = scored_results[:4]
+        # STAGE 3: Smart 2/2 Split (Balancing Primary and Secondary)
+        primary_candidates = [r for r in scored_results if r["tier"] == "Primary Selection"]
+        secondary_candidates = [r for r in scored_results if r["tier"] == "Extended Selection"]
+
+        final_results = []
         
-        # Clean up the output so we don't send the raw 'score' integer to the LLM
+        # Grab the top 2 highest-scoring from each tier
+        final_results.extend(primary_candidates[:2])
+        final_results.extend(secondary_candidates[:2])
+
+        # Fill the gaps if one database didn't have enough matches
+        if len(final_results) < 4:
+            remaining = [r for r in scored_results if r not in final_results]
+            needed = 4 - len(final_results)
+            final_results.extend(remaining[:needed])
+
+        # Final sort to ensure the absolute highest scoring item is at the very top
+        final_results.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Clean up the output to send to LLM
         clean_results = [{"name": r["name"], "category": r["category"], "tier": r["tier"], "description": r["description"]} for r in final_results]
         
-        print(f"   ✅ [Search] Reranked {len(all_docs)} docs. Top match score: {scored_results[0]['score'] if scored_results else 0}")
+        print(f"   ✅ [Search] Reranked {len(all_docs)} docs. Top match score: {final_results[0]['score'] if final_results else 0}")
         return clean_results
         
     except Exception as e:
@@ -272,9 +314,8 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
             
         messages.append({"role": "system", "content": context_str})
         
-    # --- NEW: ANTI-HALLUCINATION LOCK ---
+    # --- ANTI-HALLUCINATION LOCK ---
     else:
-        # If no context was found, FORCE the LLM to apologize.
         messages.append({"role": "system", "content": "Database Results: NONE FOUND. You MUST apologize to the user and ask them to try different keywords. Do not recommend any real or fake places."})
     
     messages.extend(chat_history)
