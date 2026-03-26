@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from functools import lru_cache
 from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -116,7 +117,7 @@ def get_intent(user_query, chat_history=[]):
 def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
     if not primary_vector_db or not secondary_vector_db:
         print("   ❌ Databases not fully initialized.")
-        return []
+        return [{"error": "DB_OFFLINE"}] # <-- Send the distress signal
         
     filter_clauses = []
 
@@ -262,7 +263,7 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
         
     except Exception as e:
         print(f"   ❌ DB Search Failed: {e}")
-        return []
+        return [{"error": "DB_OFFLINE"}]
 
 def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
@@ -272,16 +273,25 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
         messages.append({"role": "system", "content": f"User Preferences to keep in mind: {user_profile}"})
     
     if context_data:
-        # Dynamically label the data so the LLM doesn't get confused
-        if len(context_data) == 1 and context_data[0].get("name") == "Live Web Search":
+        # --- NEW: Check for the Distress Signal ---
+        if len(context_data) == 1 and context_data[0].get("error") == "DB_OFFLINE":
+            messages.append({
+                "role": "system", 
+                "content": "CRITICAL ERROR: The restaurant database is completely offline. Apologize to the user (in your Singlish persona) and explain that your backend system is down right now, so you cannot search for any food."
+            })
+            
+        # Check if it's Live Web Search data
+        elif len(context_data) == 1 and context_data[0].get("name") == "Live Web Search":
             context_str = "Live Web Search Results (You may use this to answer the user):\n"
+            context_str += f"- {context_data[0]['description']}\n"
+            messages.append({"role": "system", "content": context_str})
+            
+        # Otherwise, it's a normal successful database search!
         else:
             context_str = "Database Results:\n"
-            
-        for place in context_data:
-            context_str += f"- {place['name']} ({place['category']} - {place['tier']}): {place['description']}\n"
-            
-        messages.append({"role": "system", "content": context_str})
+            for place in context_data:
+                context_str += f"- {place['name']} ({place['category']} - {place['tier']}): {place['description']}\n"
+            messages.append({"role": "system", "content": context_str})
         
     # --- ANTI-HALLUCINATION LOCK ---
     else:
@@ -293,13 +303,19 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
-        temperature=0.7 
+        temperature=0.7,
+        stream=True
     )
-    return response.choices[0].message.content
+
+    # Yield the text chunks as they arrive from OpenAI!
+    for chunk in response:
+        if chunk.choices[0].delta.content is not None:
+            yield chunk.choices[0].delta.content
 
 # Initialize free web search tool
 web_search_tool = DuckDuckGoSearchRun()
 
+@lru_cache(maxsize=100)
 def search_live_web(query):
     print(f"   🌐 [Agent] Searching the live web for: '{query}'...")
     try:

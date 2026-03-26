@@ -3,155 +3,247 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Food Chatbot - Login 🍜</title>
+    <title>FoodKaki - Login 🍜</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #ff6b6b;
+            --primary-hover: #ff5252;
+            --focus-glow: rgba(78, 205, 196, 0.15);
+            --focus-border: #4ecdc4;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-dark: #2c3e50;
+            --text-light: #7f8c8d;
+            --input-bg: #f4f6f8;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f4f9;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            color: var(--text-dark);
+            padding: 20px;
         }
+
         .auth-container {
-            width: 420px;
-            background-color: #fff;
-            border-radius: 15px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 420px;
+            background-color: var(--card-bg);
+            border-radius: 24px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
             overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.5);
         }
+
         .auth-header {
-            background-color: #ff6b6b;
-            color: white;
-            padding: 25px;
+            padding: 40px 30px 20px;
             text-align: center;
         }
-        .auth-header h1 { font-size: 1.5rem; margin-bottom: 5px; }
-        .auth-header p { font-size: 0.85rem; opacity: 0.9; }
+        
+        .auth-header h1 { 
+            font-size: 1.75rem; 
+            font-weight: 700;
+            margin-bottom: 8px; 
+            color: var(--text-dark);
+        }
+        
+        .auth-header p { 
+            font-size: 0.95rem; 
+            color: var(--text-light);
+        }
+
+        /* Modern Segmented Control for Tabs */
+        .tabs-container {
+            padding: 0 30px;
+            margin-bottom: 20px;
+        }
 
         .tabs {
             display: flex;
-            background-color: #f8f8f8;
-            border-bottom: 1px solid #eee;
+            background-color: var(--input-bg);
+            border-radius: 16px;
+            padding: 4px;
         }
+
         .tab {
             flex: 1;
-            padding: 14px;
+            padding: 10px;
             text-align: center;
             cursor: pointer;
             font-weight: 600;
-            color: #999;
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
+            font-size: 0.9rem;
+            color: var(--text-light);
+            border-radius: 12px;
+            transition: all 0.3s ease;
         }
-        .tab.active {
-            color: #ff6b6b;
-            border-bottom-color: #ff6b6b;
-            background-color: #fff;
-        }
-        .tab:hover { color: #ff6b6b; }
 
-        .form-container { padding: 30px; }
-        .form-panel { display: none; }
-        .form-panel.active { display: block; }
+        .tab.active {
+            color: var(--text-dark);
+            background-color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .form-container { 
+            padding: 0 30px 30px; 
+        }
+        
+        .form-panel { 
+            display: none; 
+            animation: fadeIn 0.4s ease;
+        }
+        
+        .form-panel.active { 
+            display: block; 
+        }
 
         .form-group {
             margin-bottom: 20px;
         }
+        
         .form-group label {
             display: block;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             font-weight: 600;
-            color: #555;
-            font-size: 0.9rem;
+            color: var(--text-dark);
+            font-size: 0.85rem;
+            padding-left: 4px;
         }
+        
         .form-group input {
             width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
+            padding: 14px 18px;
+            background-color: var(--input-bg);
+            border: 1px solid transparent;
+            border-radius: 16px;
             font-size: 0.95rem;
             font-family: inherit;
             outline: none;
-            transition: border 0.2s;
+            transition: all 0.3s ease;
         }
+        
         .form-group input:focus {
-            border-color: #ff6b6b;
+            background-color: #ffffff;
+            border-color: var(--focus-border);
+            box-shadow: 0 0 0 4px var(--focus-glow);
+        }
+
+        .form-group input::placeholder {
+            color: #a0aab5;
         }
 
         .submit-btn {
             width: 100%;
-            padding: 14px;
-            background-color: #ff6b6b;
+            padding: 16px;
+            margin-top: 10px;
+            background-color: var(--primary);
             color: white;
             border: none;
-            border-radius: 10px;
+            border-radius: 16px;
             font-size: 1rem;
-            font-weight: bold;
+            font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s ease;
             font-family: inherit;
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.25);
         }
-        .submit-btn:hover { background-color: #ff5252; }
+        
+        .submit-btn:hover { 
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(255, 107, 107, 0.35);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        
         .submit-btn:disabled {
-            background-color: #ccc;
+            background-color: #cbd5e1;
+            box-shadow: none;
             cursor: not-allowed;
+            transform: none;
         }
 
+        /* Status Messages */
         .message {
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
             font-size: 0.9rem;
+            font-weight: 500;
             display: none;
+            animation: fadeIn 0.3s ease;
         }
         .message.error {
-            background-color: #ffe0e0;
-            color: #d32f2f;
-            border: 1px solid #ffcdd2;
+            background-color: #fef2f2;
+            color: #ef4444;
+            border: 1px solid #fee2e2;
             display: block;
         }
         .message.success {
-            background-color: #e0f5e0;
-            color: #2e7d32;
-            border: 1px solid #c8e6c9;
+            background-color: #f0fdf4;
+            color: #22c55e;
+            border: 1px solid #dcfce7;
             display: block;
+        }
+
+        .features {
+            margin-top: 25px;
+            padding: 20px;
+            background-color: #f8fafc;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            color: var(--text-light);
+            border: 1px solid #f1f5f9;
+        }
+        .features h3 {
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .features ul {
+            list-style: none;
+        }
+        .features ul li {
+            padding: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .features ul li::before {
+            content: "✨";
+            font-size: 0.9rem;
         }
 
         .guest-link {
             text-align: center;
-            padding: 15px;
-            font-size: 0.85rem;
-            color: #999;
-            border-top: 1px solid #eee;
+            padding: 20px;
+            font-size: 0.9rem;
+            color: var(--text-light);
+            border-top: 1px solid #f1f5f9;
+            background-color: #fafbfc;
         }
         .guest-link a {
-            color: #ff6b6b;
+            color: var(--primary);
             text-decoration: none;
             font-weight: 600;
+            transition: color 0.2s;
         }
-        .guest-link a:hover { text-decoration: underline; }
+        .guest-link a:hover { 
+            color: var(--primary-hover);
+            text-decoration: underline; 
+        }
 
-        .features {
-            padding: 0 30px 20px;
-            font-size: 0.85rem;
-            color: #777;
-        }
-        .features h3 {
-            font-size: 0.9rem;
-            color: #555;
-            margin-bottom: 8px;
-        }
-        .features ul {
-            list-style: none;
-            padding: 0;
-        }
-        .features ul li {
-            padding: 4px 0;
-        }
-        .features ul li::before {
-            content: "✅ ";
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -159,17 +251,18 @@
 
 <div class="auth-container">
     <div class="auth-header">
-        <h1>🍜 Food Chatbot</h1>
+        <h1><span>🍜</span> FoodKaki</h1>
         <p>Your personal Singapore food guide</p>
     </div>
 
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('login')">Login</div>
-        <div class="tab" onclick="switchTab('register')">Register</div>
+    <div class="tabs-container">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('login')">Login</div>
+            <div class="tab" onclick="switchTab('register')">Register</div>
+        </div>
     </div>
 
     <div class="form-container">
-        <!-- LOGIN FORM -->
         <div class="form-panel active" id="login-panel">
             <div class="message" id="login-msg"></div>
             <form onsubmit="handleLogin(event)">
@@ -185,7 +278,6 @@
             </form>
         </div>
 
-        <!-- REGISTER FORM -->
         <div class="form-panel" id="register-panel">
             <div class="message" id="register-msg"></div>
             <form onsubmit="handleRegister(event)">
@@ -208,23 +300,24 @@
                 <button type="submit" class="submit-btn" id="reg-btn">Create Account</button>
             </form>
 
-            <div class="features" style="margin-top: 15px;">
+            <div class="features">
                 <h3>Why create an account?</h3>
                 <ul>
                     <li>Save your food preferences</li>
-                    <li>Chat history across sessions</li>
-                    <li>Personalised recommendations</li>
+                    <li>Keep chat history across sessions</li>
+                    <li>Get personalised recommendations</li>
                 </ul>
             </div>
         </div>
     </div>
 
     <div class="guest-link">
-        Or <a href="/chat/guest">continue as guest</a> (no history saved)
+        Or <a href="/chat/guest">continue as guest</a>
     </div>
 </div>
 
 <script>
+    // Note: The JavaScript logic remains exactly the same to ensure your backend routing doesn't break.
     function switchTab(tab) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.form-panel').forEach(p => p.classList.remove('active'));
@@ -236,7 +329,6 @@
             document.querySelectorAll('.tab')[1].classList.add('active');
             document.getElementById('register-panel').classList.add('active');
         }
-        // Clear messages
         document.getElementById('login-msg').className = 'message';
         document.getElementById('register-msg').className = 'message';
     }
@@ -273,8 +365,10 @@
         } catch (err) {
             showMessage('login-msg', 'Could not connect to server', 'error');
         } finally {
-            btn.disabled = false;
-            btn.textContent = 'Login';
+            if(!document.getElementById('login-msg').classList.contains('success')) {
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
         }
     }
 
@@ -312,8 +406,10 @@
         } catch (err) {
             showMessage('register-msg', 'Could not connect to server', 'error');
         } finally {
-            btn.disabled = false;
-            btn.textContent = 'Create Account';
+            if(!document.getElementById('register-msg').classList.contains('success')) {
+                btn.disabled = false;
+                btn.textContent = 'Create Account';
+            }
         }
     }
 </script>
