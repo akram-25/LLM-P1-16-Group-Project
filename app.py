@@ -201,35 +201,45 @@ def chat():
             full_bot_reply = ""
             stream_source = []
 
-            # Determine which function to call based on the intent
             if intent == "SEARCH":
-                search_query = decision.get("keywords", user_input)
+                original_query = decision.get("keywords", user_input)
                 target_restaurant = decision.get("target_restaurant")
 
                 if not is_guest:
-                    db.save_search(user_id, search_query)
+                    db.save_search(user_id, original_query)
 
-                db_results = bot.search_cloud_db(search_query, user_profile, target_restaurant)
+                # --- THE REFLECTION LOOP (Max 2 Attempts) ---
+                max_attempts = 2
+                attempt = 1
+                current_query = original_query
+                best_db_results = []
+
+                while attempt <= max_attempts:
+                    print(f"   🔍 [Attempt {attempt}] Searching for: {current_query}")
+                    
+                    # 1. Act (Retrieve Data)
+                    db_results = bot.search_cloud_db(current_query, user_profile, target_restaurant)
+                    best_db_results = db_results # Always save the latest attempt
+
+                    # 2. Skip reflection if the user is looking for an exact restaurant name
+                    if target_restaurant:
+                        break
+
+                    # 3. Observe & Reflect
+                    evaluation = bot.evaluate_and_reflect(user_input, db_results)
+                    print(f"   🧠 [Reflection] Pass: {evaluation.get('pass')} | Reason: {evaluation.get('reasoning')}")
+
+                    # 4. Decide
+                    if evaluation.get("pass") == True:
+                        break # The results are good! Exit the loop.
+                    else:
+                        # 5. Revise & Try Again
+                        current_query = evaluation.get("revised_query", current_query)
+                        attempt += 1
+
+                # Finally, pass the best results to the Generator to stream to the user!
                 stream_source = bot.generate_response_with_history(
-                    user_input, chat_history, context_data=db_results, user_profile=user_profile
-                )
-            
-            elif intent == "LIVE_SEARCH":
-                live_query = decision.get("query", user_input)
-
-                if not is_guest:
-                    db.save_search(user_id, live_query, search_type="live_web")
-
-                web_results_text = bot.search_live_web(live_query)
-                formatted_web_context = [{
-                    "name": "Live Web Search",
-                    "category": "Operational Info",
-                    "tier": "Internet Results",
-                    "description": web_results_text
-                }]
-
-                stream_source = bot.generate_response_with_history(
-                    user_input, chat_history, context_data=formatted_web_context, user_profile=user_profile
+                    user_input, chat_history, context_data=best_db_results, user_profile=user_profile
                 )
 
             elif intent == "SAVE_PREF":

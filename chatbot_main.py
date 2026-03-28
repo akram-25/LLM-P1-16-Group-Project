@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-from prompts import INTENT_PROMPT, PERSONA_PROMPT
+from prompts import INTENT_PROMPT, PERSONA_PROMPT, CRITIC_PROMPT
 
 from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
@@ -264,6 +264,36 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
     except Exception as e:
         print(f"   ❌ DB Search Failed: {e}")
         return [{"error": "DB_OFFLINE"}]
+    
+
+def evaluate_and_reflect(user_query, db_results):
+    """
+    The Reflection Agent: Grades the DB results against the user query.
+    """
+    # If the DB crashed or found absolutely nothing, it's an automatic fail
+    if not db_results or db_results[0].get("error"):
+        return {"pass": False, "revised_query": "broad popular food"}
+
+    # Prepare the context for the Critic
+    context_str = "Retrieved Restaurants:\n"
+    for place in db_results:
+        context_str += f"- {place['name']} ({place['category']}): {place['description'][:150]}...\n"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo", # Use 3.5 for speed and low cost!
+            messages=[
+                {"role": "system", "content": CRITIC_PROMPT},
+                {"role": "user", "content": f"USER QUERY: {user_query}\n\n{context_str}"}
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"} 
+        )
+        evaluation = json.loads(response.choices[0].message.content)
+        return evaluation
+    except Exception as e:
+        print(f"   [Critic Error] {e}")
+        return {"pass": True} # Default to passing if the critic fails
 
 def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
