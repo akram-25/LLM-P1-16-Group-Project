@@ -117,35 +117,12 @@ def get_intent(user_query, chat_history=[]):
 def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
     if not primary_vector_db or not secondary_vector_db:
         print("   ❌ Databases not fully initialized.")
-        return [{"error": "DB_OFFLINE"}] # <-- Send the distress signal
-        
-    filter_clauses = []
-
-    # ONLY apply strict DB filters for dealbreakers (Health/Safety)
-    if user_profile:
-        if user_profile.get("diet") and len(user_profile["diet"]) > 0:
-            filter_clauses.append({"diet": {"$eq": user_profile["diet"][0].lower()}})
-        
-        # TEMPORARILY DISABLED: Re-enable once 'allergens' metadata exists in DB
-        # if user_profile.get("allergy") and len(user_profile["allergy"]) > 0:
-        #     for allergen in user_profile["allergy"]:
-        #         filter_clauses.append({"allergens": {"$ne": allergen.lower()}})
-
-    search_filter = None
-    if len(filter_clauses) == 1:
-        search_filter = filter_clauses[0]
-    elif len(filter_clauses) > 1:
-        search_filter = {"$and": filter_clauses}
+        return [{"error": "DB_OFFLINE"}]
 
     try:
-        # STAGE 1: Broad Vector Search
-        if search_filter:
-            print(f"   ⚙️ [Filter] Applying strict Dealbreaker rules: {search_filter}")
-            primary_docs = primary_vector_db.similarity_search(query_text, k=40, filter=search_filter)
-            secondary_docs = secondary_vector_db.similarity_search(query_text, k=40, filter=search_filter)
-        else:
-            primary_docs = primary_vector_db.similarity_search(query_text, k=40)
-            secondary_docs = secondary_vector_db.similarity_search(query_text, k=40)
+        # STAGE 1: Broad Vector Search (use original query — diet is enforced in reranker)
+        primary_docs = primary_vector_db.similarity_search(query_text, k=40)
+        secondary_docs = secondary_vector_db.similarity_search(query_text, k=40)
             
         # Combine all 80 results AND preserve their Vector Search ranking!
         all_docs = []
@@ -161,10 +138,35 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
         if user_profile and user_profile.get("cuisine"):
             favorite_cuisines = [c.lower() for c in user_profile["cuisine"]]
         
-        stop_words = {"find", "me", "in", "the", "a", "some", "good", "food", "place", "restaurant", "for", "and", "or", "near", "around", "at", "best", "cheap"}
-        
+        stop_words = {
+            "find", "me", "in", "the", "a", "some", "good", "food", "place", "restaurant",
+            "for", "and", "or", "near", "around", "at", "best", "cheap", "recommend",
+            "want", "area", "looking", "craving", "try", "suggest", "show", "give",
+            "i", "can", "you", "please", "like", "any", "something", "spots", "spot",
+            "options", "option", "get", "know", "tell", "about", "with",
+        }
+
+        diet_terms = [d.lower() for d in (user_profile.get("diet", []) if user_profile else [])]
+
+        # Coordinate-based region bounds for Singapore.
+        # Used to enforce location when the user specifies a region.
+        REGION_BOUNDS = {
+            "west":      {"lat": (1.28, 1.38), "lon": (103.60, 103.82)},
+            "east":      {"lat": (1.29, 1.41), "lon": (103.86, 104.03)},
+            "north":     {"lat": (1.39, 1.47), "lon": (103.74, 103.88)},
+            "central":   {"lat": (1.27, 1.37), "lon": (103.81, 103.88)},
+            "northeast": {"lat": (1.34, 1.43), "lon": (103.87, 103.98)},
+        }
+
         clean_query = query_text.lower().replace(',', '').replace('.', '')
         query_words = set(clean_query.split())
+
+        # Detect if the user specified a region
+        detected_region = None
+        for region in REGION_BOUNDS:
+            if region in query_words:
+                detected_region = region
+                break
         
         for item in all_docs:
             doc = item["doc"]
@@ -208,12 +210,40 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             if category_hits > 0 and address_hits > 0:
                 score += 150 
             
-            # --- 3. SOFT PREFERENCE BOOSTING ---
+            # --- 3. DIETARY SCORING ---
+            # Boost restaurants whose category contains the user's diet term (e.g. "halal",
+            # "vegetarian", "vegan"). Penalise those that don't — penalty is intentionally
+            # larger than a single location bonus so diet compliance beats bare location match.
+            for diet in diet_terms:
+                if diet in category_tags:
+                    score += 80
+                else:
+                    score -= 100
+
+            # --- 4. COORDINATE-BASED REGION ENFORCEMENT ---
+            # If the user asked for a specific region (e.g. "west"), use the restaurant's
+            # lat/lon to confirm it is actually in that region. A wrong-region restaurant
+            # gets a heavy penalty that overrides diet and quality bonuses.
+            if detected_region:
+                bounds = REGION_BOUNDS[detected_region]
+                try:
+                    lat = float(doc.metadata.get('latitude', 0))
+                    lon = float(doc.metadata.get('longitude', 0))
+                    lat_ok = bounds["lat"][0] <= lat <= bounds["lat"][1]
+                    lon_ok = bounds["lon"][0] <= lon <= bounds["lon"][1]
+                    if lat_ok and lon_ok:
+                        score += 200
+                    else:
+                        score -= 200
+                except (TypeError, ValueError):
+                    pass  # no coordinates — leave score unchanged
+
+            # --- 5. SOFT PREFERENCE BOOSTING ---
             for fav_cuisine in favorite_cuisines:
                 if fav_cuisine in category_tags:
-                    score += 20 
+                    score += 20
 
-            # --- 4. THE QUALITY MULTIPLIER (The "Best Options" Fix) ---
+            # --- 6. THE QUALITY MULTIPLIER (The "Best Options" Fix) ---
             # Reward places with genuinely good ratings
             if rating >= 4.0:
                 # E.g., a 4.8 rating gets +16 points, a 4.1 gets +2 points
@@ -297,10 +327,21 @@ def evaluate_and_reflect(user_query, db_results):
 
 def generate_response_with_history(new_user_input, chat_history, context_data=None, user_profile=None):
     messages = [{"role": "system", "content": PERSONA_PROMPT}]
-    
-    # Let the LLM see the user's saved preferences!
+
+    # Inject preferences and hard dietary enforcement rule
     if user_profile:
         messages.append({"role": "system", "content": f"User Preferences to keep in mind: {user_profile}"})
+        diet_terms = user_profile.get("diet", [])
+        if diet_terms:
+            diet_str = ", ".join(diet_terms)
+            messages.append({"role": "system", "content": (
+                f"CRITICAL DIETARY RULE: This user requires {diet_str} food. "
+                f"A restaurant is ONLY acceptable if it is PRIMARILY {diet_str} — "
+                f"meaning its core identity is {diet_str} (e.g. a vegetarian restaurant, a halal-certified eatery). "
+                f"A meat-focused or non-certified restaurant that merely offers a couple of {diet_str} options is NOT acceptable. "
+                f"You MUST silently skip any restaurant that does not clearly meet this standard. "
+                f"If none of the retrieved results are suitable, say so honestly and ask the user to try different keywords."
+            )})
     
     if context_data:
         # --- NEW: Check for the Distress Signal ---

@@ -14,7 +14,8 @@ Classify the user's input into one of these intents based on the User Query and 
    - Return: {"intent": "LIVE_SEARCH", "query": "exact search terms"}
 
 3. SAVE_PREF: User states a personal fact or identity.
-   - Return: {"intent": "SAVE_PREF", "key": "STANDARD_KEY", "value": "extracted value"}
+   - ONLY use these exact keys: "diet" (e.g. halal, vegetarian, vegan), "allergy" (e.g. peanuts, seafood), "cuisine" (e.g. Japanese, Indian), "budget" (e.g. $10-$20), "location" (e.g. Tampines), "spice" (e.g. mild, spicy)
+   - Return: {"intent": "SAVE_PREF", "key": "diet", "value": "halal"}
 
 4. SAVE_FAVORITE: User asks to save or bookmark a specific restaurant.
    - Return: {"intent": "SAVE_FAVORITE", "restaurant_name": "Extracted Name"}
