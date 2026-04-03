@@ -4,19 +4,16 @@ import chatbot_main as bot
 import db
 
 app = Flask(__name__)
-# Moved to environment variable for security, with a fallback for dev
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 
-# Initialize database schema on startup
+# Initialise database schema on startup
 try:
     db.init_db()
 except Exception as e:
-    print(f"⚠️ Could not initialize database: {e}")
+    print(f"Could not initialise database: {e}")
 
 
-# ==========================================
 # AUTH ROUTES
-# ==========================================
 @app.route("/login")
 def login_page():
     # If already logged in, go to chat
@@ -87,9 +84,7 @@ def auth_me():
     return jsonify({"logged_in": False})
 
 
-# ==========================================
 # GUEST MODE
-# ==========================================
 @app.route("/chat/guest")
 def guest_mode():
     session["user_id"] = "guest"
@@ -97,9 +92,7 @@ def guest_mode():
     return redirect(url_for("home"))
 
 
-# ==========================================
 # SETTINGS / PREFERENCES
-# ==========================================
 @app.route("/settings")
 def settings_page():
     if not session.get("user_id"):
@@ -138,9 +131,7 @@ def settings_save():
     return jsonify({"success": True})
 
 
-# ==========================================
 # MAIN CHAT ROUTES
-# ==========================================
 @app.route("/")
 def home():
     # Require login (or guest mode)
@@ -177,7 +168,7 @@ def chat():
         return Response("Error: Empty message", mimetype='text/plain')
 
     try:
-        # Load chat history from DB (or empty for guests)
+        # Load chat history from DB (empty for guests)
         if not is_guest:
             chat_history = db.get_chat_history(user_id, limit=10)
         else:
@@ -194,9 +185,7 @@ def chat():
         else:
             user_profile = {}
 
-        # ==========================================
-        # 3. THE STREAMING GENERATOR
-        # ==========================================
+        # 3. Streaming Generator Function
         def generate_stream():
             full_bot_reply = ""
             stream_source = []
@@ -208,7 +197,7 @@ def chat():
                 if not is_guest:
                     db.save_search(user_id, original_query)
 
-                # --- THE REFLECTION LOOP (Max 2 Attempts) ---
+                # Reflection Loop (Max 2 Attempts)
                 max_attempts = 2
                 attempt = 1
                 current_query = original_query
@@ -217,7 +206,7 @@ def chat():
                 while attempt <= max_attempts:
                     print(f"   🔍 [Attempt {attempt}] Searching for: {current_query}")
                     
-                    # 1. Act (Retrieve Data)
+                    # 1. Retrieve Data
                     db_results = bot.search_cloud_db(current_query, user_profile, target_restaurant)
                     best_db_results = db_results # Always save the latest attempt
 
@@ -225,19 +214,19 @@ def chat():
                     if target_restaurant:
                         break
 
-                    # 3. Observe & Reflect
+                    # 3. Observe and Reflect
                     evaluation = bot.evaluate_and_reflect(user_input, db_results)
                     print(f"   🧠 [Reflection] Pass: {evaluation.get('pass')} | Reason: {evaluation.get('reasoning')}")
 
                     # 4. Decide
                     if evaluation.get("pass") == True:
-                        break # The results are good! Exit the loop.
+                        break # If results are good, exit the loop 
                     else:
-                        # 5. Revise & Try Again
+                        # 5. Revise and try again
                         current_query = evaluation.get("revised_query", current_query)
                         attempt += 1
 
-                # Finally, pass the best results to the Generator to stream to the user!
+                # Pass the best results to the Generator to stream to the user
                 stream_source = bot.generate_response_with_history(
                     user_input, chat_history, context_data=best_db_results, user_profile=user_profile
                 )
@@ -267,18 +256,18 @@ def chat():
                     user_input, chat_history, user_profile=user_profile
                 )
 
-            # --- Yield the chunks to the frontend in real-time! ---
+            # Yield the chunks to the frontend in real-time
             for chunk in stream_source:
                 if chunk:
                     full_bot_reply += chunk
                     yield chunk
 
-            # --- After the stream finishes, save the full conversation to DB ---
+            # After the stream finishes, save the full conversation to DB (only if not BLOCK intent and not guest)
             if intent != "BLOCK" and not is_guest:
                 db.save_chat_message(user_id, "user", user_input)
                 db.save_chat_message(user_id, "assistant", full_bot_reply)
 
-        # 4. Return the generator wrapped in a Flask Response
+        # Return the generator wrapped in a Flask Response
         return Response(stream_with_context(generate_stream()), mimetype='text/plain')
 
     except Exception as e:

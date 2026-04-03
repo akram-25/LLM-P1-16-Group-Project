@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FoodKaki - Preferences 🍜</title>
+    <title>Food Chatbot - Preferences 🍜</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -114,7 +114,7 @@
             margin-bottom: 14px;
         }
 
-        /* Tag/chip input styling */
+        /* Tag input styling */
         .tag-input-container {
             background-color: var(--input-bg);
             border: 1px solid transparent;
@@ -328,7 +328,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Mobile Adjustments */
         @media (max-width: 500px) {
             body { padding: 0; }
             .settings-container {
@@ -353,14 +352,14 @@
     </div>
 
     <div class="onboarding-banner" id="onboarding-banner">
-        👋 Welcome! Set up your food preferences so I can give you better recommendations. You can always change these later.
+        Welcome! Set up your food preferences so I can give you better recommendations. You can always change these later.
     </div>
 
     <div class="settings-body">
         <div class="msg-toast" id="save-msg"></div>
 
         <div class="section">
-            <div class="section-title">🚫 Food Allergies</div>
+            <div class="section-title">Food Allergies</div>
             <div class="section-desc">Add any ingredients or foods you're allergic to</div>
             <div class="tag-input-container" id="allergy-tags" onclick="document.getElementById('allergy-input').focus()">
                 <input type="text" class="tag-input" id="allergy-input" placeholder="Type and press Enter...">
@@ -376,7 +375,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">🍜 Favourite Cuisines</div>
+            <div class="section-title">Favourite Cuisines</div>
             <div class="section-desc">Pick your favourite types of food</div>
             <div class="tag-input-container" id="cuisine-tags" onclick="document.getElementById('cuisine-input').focus()">
                 <input type="text" class="tag-input" id="cuisine-input" placeholder="Type and press Enter...">
@@ -394,7 +393,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">🥗 Dietary Preferences</div>
+            <div class="section-title">Dietary Preferences</div>
             <div class="section-desc">Select all that apply</div>
             <div class="select-group" id="diet-options">
                 <button class="select-option" data-value="Halal">Halal</button>
@@ -409,7 +408,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">💰 Budget Range</div>
+            <div class="section-title">Budget Range</div>
             <div class="section-desc">How much do you usually spend per meal?</div>
             <div class="select-group" id="budget-options">
                 <button class="select-option selected" data-value="Any">Any</button>
@@ -422,7 +421,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">🌶️ Spice Tolerance</div>
+            <div class="section-title">Spice Tolerance</div>
             <div class="section-desc">How spicy can you handle?</div>
             <div class="select-group" id="spice-options">
                 <button class="select-option selected" data-value="Any">Any</button>
@@ -435,7 +434,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">📍 Preferred Area</div>
+            <div class="section-title">Preferred Area</div>
             <div class="section-desc">Where do you usually eat? (e.g. Ang Mo Kio, Jurong East, CBD)</div>
             <div class="tag-input-container" id="location-tags" onclick="document.getElementById('location-input').focus()">
                 <input type="text" class="tag-input" id="location-input" placeholder="Type area and press Enter...">
@@ -443,7 +442,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">📝 Anything Else?</div>
+            <div class="section-title">Anything Else?</div>
             <div class="section-desc">Any other food preferences the chatbot should know about</div>
             <textarea class="pref-textarea" id="notes-input" placeholder="e.g. I prefer air-conditioned places, I love desserts, I don't like queuing..."></textarea>
         </div>
@@ -456,9 +455,7 @@
 </div>
 
 <script>
-    // ==========================================
-    // TAG INPUT SYSTEM
-    // ==========================================
+    // Tag Input Logic
     const tagData = {
         allergy: [],
         cuisine: [],
@@ -498,7 +495,7 @@
         const container = document.getElementById(`${category}-tags`);
         const input = document.getElementById(`${category}-input`);
 
-        // Remove existing tags (keep the input)
+        // Remove existing tags
         container.querySelectorAll('.tag').forEach(t => t.remove());
 
         tagData[category].forEach((val, idx) => {
@@ -526,7 +523,6 @@
             const category = this.dataset.target;
             const value = this.dataset.value;
             if (this.classList.contains('selected')) {
-                // Remove
                 const idx = tagData[category].findIndex(t => t.toLowerCase() === value.toLowerCase());
                 if (idx !== -1) removeTag(category, idx);
             } else {
@@ -535,18 +531,16 @@
         });
     });
 
-    // Handle multi-select option clicks (diet, budget, spice)
+    // Handle multi-select option clicks
     document.querySelectorAll('#diet-options .select-option').forEach(btn => {
         btn.addEventListener('click', () => btn.classList.toggle('selected'));
     });
-    // Budget: single select
     document.querySelectorAll('#budget-options .select-option').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('#budget-options .select-option').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
         });
     });
-    // Spice: single select
     document.querySelectorAll('#spice-options .select-option').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('#spice-options .select-option').forEach(b => b.classList.remove('selected'));
@@ -555,11 +549,8 @@
     });
 
 
-    // ==========================================
-    // LOAD EXISTING SETTINGS
-    // ==========================================
+    // Load Existing Settings
     window.addEventListener('DOMContentLoaded', async () => {
-        // Check if this is onboarding
         const params = new URLSearchParams(window.location.search);
         if (params.get('onboarding') === '1') {
             document.getElementById('onboarding-banner').classList.add('visible');
@@ -619,9 +610,7 @@
     });
 
 
-    // ==========================================
-    // SAVE / SKIP
-    // ==========================================
+    // Save/Skip
     function collectPreferences() {
         const prefs = {};
 
@@ -639,11 +628,11 @@
         });
         if (dietVals.length > 0) prefs.diet = dietVals;
 
-        // Budget (single-select, skip "Any" as it means no restriction)
+        // Budget (single-select)
         const budgetBtn = document.querySelector('#budget-options .select-option.selected');
         if (budgetBtn && budgetBtn.dataset.value !== 'Any') prefs.budget = [budgetBtn.dataset.value];
 
-        // Spice (single-select, skip "Any" as it means no restriction)
+        // Spice (single-select)
         const spiceBtn = document.querySelector('#spice-options .select-option.selected');
         if (spiceBtn && spiceBtn.dataset.value !== 'Any') prefs.spice = [spiceBtn.dataset.value];
 
@@ -674,7 +663,6 @@
                 msgEl.textContent = 'Preferences saved!';
                 msgEl.className = 'msg-toast success';
 
-                // If onboarding, redirect to chat after short delay
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('onboarding') === '1') {
                     setTimeout(() => window.location.href = '/', 800);
@@ -699,7 +687,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ preferences: {}, skip: true })
             });
-        } catch (e) { /* ignore */ }
+        } catch (e) {  }
         window.location.href = '/';
     }
 
