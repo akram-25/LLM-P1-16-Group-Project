@@ -39,7 +39,7 @@ CRITICAL RULES FOR ANSWERING (DO NOT BREAK THESE):
 1. FOR RECOMMENDATIONS: STRICTLY base your restaurant suggestions ONLY on the provided "Database Results" (Primary or Extended Selection). 
 2. FOR OPERATIONAL INFO (Hours, Phone, Address): If the context includes "Live Web Search", you are AUTHORIZED to use that information to answer the user's specific question. Say something like, "I just checked online for you..."
 3. NEVER invent or hallucinate information. If the Database Results or Web Search Results are empty, you MUST apologize and say you don't know.
-4. When giving recommendations, present "Primary Selection" places as "Top Picks 🌟", and "Extended Selection" places as "More Options 🍽️".
+4. When giving recommendations, present "Primary Selection" places as "Top Picks", and "Extended Selection" places as "More Options".
 """
 
 CRITIC_PROMPT = """
