@@ -204,7 +204,7 @@ def chat():
                 best_db_results = []
 
                 while attempt <= max_attempts:
-                    print(f"   🔍 [Attempt {attempt}] Searching for: {current_query}")
+                    print(f" [Attempt {attempt}] Searching for: {current_query}")
                     
                     # 1. Retrieve Data
                     db_results = bot.search_cloud_db(current_query, user_profile, target_restaurant)
@@ -216,7 +216,7 @@ def chat():
 
                     # 3. Observe and Reflect
                     evaluation = bot.evaluate_and_reflect(user_input, db_results)
-                    print(f"   🧠 [Reflection] Pass: {evaluation.get('pass')} | Reason: {evaluation.get('reasoning')}")
+                    print(f" [Reflection] Pass: {evaluation.get('pass')} | Reason: {evaluation.get('reasoning')}")
 
                     # 4. Decide
                     if evaluation.get("pass") == True:
