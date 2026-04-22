@@ -13,9 +13,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
 from langchain_community.tools import DuckDuckGoSearchRun
 
-# ==========================================
 # 1. SETUP & CONNECTION
-# ==========================================
 load_dotenv('apikeys.env')
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -25,7 +23,7 @@ PG_CONNECTION = (
     f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
 )
 
-print("🔗 Connecting to PostgreSQL vector store...")
+print("Connecting to PostgreSQL vector store...")
 
 embedding_fn = OpenAIEmbeddings(
     model="text-embedding-3-small",
@@ -43,16 +41,14 @@ try:
         collection_name="foodkaki_restaurants_secondary",
         embeddings=embedding_fn,
     )
-    print("   ✅ Vector store connected.")
+    print("Vector store connected.")
 except Exception as e:
-    print(f"\n🛑 WARNING: Could not connect to vector store. {e}")
+    print(f"\nWARNING: Could not connect to vector store. {e}")
     primary_vector_db = None
     secondary_vector_db = None
 
 
-# ==========================================
 # 2. USER MEMORY (Long-Term Storage)
-# ==========================================
 USER_DB_FILE = "users.json"
 
 def load_user_profile(username):
@@ -111,27 +107,25 @@ def get_intent(user_query, chat_history=[]):
         print(f"   [Router Error] {e}")
         return {"intent": "CHAT"}
 
-# ==========================================
 # 4. CORE FUNCTIONS (RAG & Generation)
-# ==========================================
 def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
     if not primary_vector_db or not secondary_vector_db:
-        print("   ❌ Databases not fully initialized.")
+        print(" Databases not fully initialised.")
         return [{"error": "DB_OFFLINE"}]
 
     try:
-        # STAGE 1: Broad Vector Search (use original query — diet is enforced in reranker)
+        # Stage 1: Broad Vector Search (use original query + diet is enforced in reranker)
         primary_docs = primary_vector_db.similarity_search(query_text, k=40)
         secondary_docs = secondary_vector_db.similarity_search(query_text, k=40)
             
-        # Combine all 80 results AND preserve their Vector Search ranking!
+        # Combine all 80 results and preserve their Vector Search ranking
         all_docs = []
         for i, doc in enumerate(primary_docs):
             all_docs.append({"tier": "Primary Selection", "doc": doc, "base_score": 40 - i})
         for i, doc in enumerate(secondary_docs):
             all_docs.append({"tier": "Extended Selection", "doc": doc, "base_score": 40 - i})
 
-        # STAGE 2: AI-Driven Lexical Reranker, Quality Booster & Multiplier
+        # Stage 2: AI-Driven Lexical Reranker, Quality Booster and Multiplier
         scored_results = []
         
         favorite_cuisines = []
@@ -148,8 +142,8 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
 
         diet_terms = [d.lower() for d in (user_profile.get("diet", []) if user_profile else [])]
 
-        # Coordinate-based region bounds for Singapore.
-        # Used to enforce location when the user specifies a region.
+        # Coordinate-based region bounds for Singapore
+        # Used to enforce location when the user specifies a region
         REGION_BOUNDS = {
             "west":      {"lat": (1.28, 1.38), "lon": (103.60, 103.82)},
             "east":      {"lat": (1.29, 1.41), "lon": (103.86, 104.03)},
@@ -180,7 +174,7 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             
             score = item["base_score"] 
             
-            # --- 1. DYNAMIC EXACT NAME MATCHING ---
+            # 1. DYNAMIC EXACT NAME MATCHING
             if target_restaurant:
                 target_lower = target_restaurant.lower()
                 if target_lower in restaurant_name:
@@ -189,14 +183,13 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
                     if len(word) > 2 and word in restaurant_name: 
                         score += 100
             
-            # --- 2. THE INTERSECTION MULTIPLIER ---
+            # 2. THE INTERSECTION MULTIPLIER
             category_hits = 0
             address_hits = 0
             
             for word in query_words:
                 if len(word) > 2 and word not in stop_words:
-                    # FIX: We NO LONGER check the restaurant name here! 
-                    # We only check if the word is actually in the category/tags.
+                    # Only check if the word is actually in the category/tags
                     if word in category_tags:
                         category_hits += 1
                     if word in address_text:
@@ -210,20 +203,19 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
             if category_hits > 0 and address_hits > 0:
                 score += 150 
             
-            # --- 3. DIETARY SCORING ---
-            # Boost restaurants whose category contains the user's diet term (e.g. "halal",
-            # "vegetarian", "vegan"). Penalise those that don't — penalty is intentionally
-            # larger than a single location bonus so diet compliance beats bare location match.
+            # 3. DIETARY SCORING
+            # Boost restaurants whose category contains the user's diet term (e.g. "halal","vegetarian")
+            # Penalise those that don't
+            # Penalty is intentionally larger than a single location bonus so diet compliance beats bare location match
             for diet in diet_terms:
                 if diet in category_tags:
                     score += 80
                 else:
                     score -= 100
 
-            # --- 4. COORDINATE-BASED REGION ENFORCEMENT ---
-            # If the user asked for a specific region (e.g. "west"), use the restaurant's
-            # lat/lon to confirm it is actually in that region. A wrong-region restaurant
-            # gets a heavy penalty that overrides diet and quality bonuses.
+            # 4. COORDINATE-BASED REGION ENFORCEMENT
+            # If the user asked for a specific region (e.g. "west"), use the restaurant's lat/lon to confirm it is actually in that region
+            # A wrong-region restaurant gets a heavy penalty that overrides diet and quality bonuses
             if detected_region:
                 bounds = REGION_BOUNDS[detected_region]
                 try:
@@ -236,20 +228,20 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
                     else:
                         score -= 200
                 except (TypeError, ValueError):
-                    pass  # no coordinates — leave score unchanged
+                    pass
 
-            # --- 5. SOFT PREFERENCE BOOSTING ---
+            # 5. SOFT PREFERENCE BOOSTING
             for fav_cuisine in favorite_cuisines:
                 if fav_cuisine in category_tags:
                     score += 20
 
-            # --- 6. THE QUALITY MULTIPLIER (The "Best Options" Fix) ---
+            # 6. THE QUALITY MULTIPLIER
             # Reward places with genuinely good ratings
             if rating >= 4.0:
                 # E.g., a 4.8 rating gets +16 points, a 4.1 gets +2 points
                 score += (rating - 4.0) * 20 
                 
-                # Bonus points if they have a lot of reviews (proven consistency)
+                # Bonus points if they have a lot of reviews
                 if review_count > 100:
                     score += 10
                 if review_count > 500:
@@ -263,7 +255,7 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
                 "description": doc.page_content
             })
 
-        # Sort ALL results so the absolute best matches bubble to the top
+        # Sort ALL results so the absolute best matches gets pushed to the top
         scored_results.sort(key=lambda x: x["score"], reverse=True)
         
         # STAGE 3: Smart 2/2 Split (Balancing Primary and Secondary)
@@ -276,7 +268,7 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
         final_results.extend(primary_candidates[:2])
         final_results.extend(secondary_candidates[:2])
 
-        # Fill the gaps if one database didn't have enough matches
+        # Fill the gaps if one database doesn't have enough matches
         if len(final_results) < 4:
             remaining = [r for r in scored_results if r not in final_results]
             needed = 4 - len(final_results)
@@ -288,19 +280,17 @@ def search_cloud_db(query_text, user_profile=None, target_restaurant=None):
         # Clean up the output to send to LLM
         clean_results = [{"name": r["name"], "category": r["category"], "tier": r["tier"], "description": r["description"]} for r in final_results]
         
-        print(f"   ✅ [Search] Reranked {len(all_docs)} docs. Top match score: {final_results[0]['score'] if final_results else 0}")
+        print(f"[Search] Reranked {len(all_docs)} docs. Top match score: {final_results[0]['score'] if final_results else 0}")
         return clean_results
         
     except Exception as e:
-        print(f"   ❌ DB Search Failed: {e}")
+        print(f"DB Search Failed: {e}")
         return [{"error": "DB_OFFLINE"}]
     
 
 def evaluate_and_reflect(user_query, db_results):
-    """
-    The Reflection Agent: Grades the DB results against the user query.
-    """
-    # If the DB crashed or found absolutely nothing, it's an automatic fail
+    # The Reflection Agent: Grades the DB results against the user query.
+    # If the DB crashed or found absolutely nothing, it has failed
     if not db_results or db_results[0].get("error"):
         return {"pass": False, "revised_query": "broad popular food"}
 
@@ -311,7 +301,7 @@ def evaluate_and_reflect(user_query, db_results):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo", # Use 3.5 for speed and low cost!
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": CRITIC_PROMPT},
                 {"role": "user", "content": f"USER QUERY: {user_query}\n\n{context_str}"}
@@ -344,11 +334,11 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
             )})
     
     if context_data:
-        # --- NEW: Check for the Distress Signal ---
+        # Check for the Distress Signal
         if len(context_data) == 1 and context_data[0].get("error") == "DB_OFFLINE":
             messages.append({
                 "role": "system", 
-                "content": "CRITICAL ERROR: The restaurant database is completely offline. Apologize to the user (in your Singlish persona) and explain that your backend system is down right now, so you cannot search for any food."
+                "content": "CRITICAL ERROR: The restaurant database is completely offline. Apologise to the user (in your Singlish persona) and explain that your backend system is down right now, so you cannot search for any food."
             })
             
         # Check if it's Live Web Search data
@@ -357,16 +347,16 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
             context_str += f"- {context_data[0]['description']}\n"
             messages.append({"role": "system", "content": context_str})
             
-        # Otherwise, it's a normal successful database search!
+        # Else it's a normal successful database search
         else:
             context_str = "Database Results:\n"
             for place in context_data:
                 context_str += f"- {place['name']} ({place['category']} - {place['tier']}): {place['description']}\n"
             messages.append({"role": "system", "content": context_str})
         
-    # --- ANTI-HALLUCINATION LOCK ---
+    # ANTI-HALLUCINATION LOCK
     else:
-        messages.append({"role": "system", "content": "Database Results: NONE FOUND. You MUST apologize to the user and ask them to try different keywords. Do not recommend any real or fake places."})
+        messages.append({"role": "system", "content": "Database Results: NONE FOUND. You MUST apologise to the user and ask them to try different keywords. Do not recommend any real or fake places."})
     
     messages.extend(chat_history)
     messages.append({"role": "user", "content": new_user_input})
@@ -378,20 +368,19 @@ def generate_response_with_history(new_user_input, chat_history, context_data=No
         stream=True
     )
 
-    # Yield the text chunks as they arrive from OpenAI!
+    # Yield the text chunks as they arrive from OpenAI
     for chunk in response:
         if chunk.choices[0].delta.content is not None:
             yield chunk.choices[0].delta.content
 
-# Initialize free web search tool
+# Initialise web search tool
 web_search_tool = DuckDuckGoSearchRun()
 
 @lru_cache(maxsize=100)
 def search_live_web(query):
-    print(f"   🌐 [Agent] Searching the live web for: '{query}'...")
+    print(f"[Agent] Searching the live web for: '{query}'...")
     try:
-        # Ask DuckDuckGo for the top snippets
         return web_search_tool.run(query)
     except Exception as e:
-        print(f"   ❌ Web Search Failed: {e}")
+        print(f"Web Search Failed: {e}")
         return "Sorry, I couldn't find those details online right now."

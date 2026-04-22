@@ -19,16 +19,13 @@ DB_CONFIG = {
 
 
 def get_connection():
-    """Get a new PostgreSQL connection."""
+    # Get a new PostgreSQL connection
     return psycopg2.connect(**DB_CONFIG)
 
 
 def init_db():
-    """
-    Ensure required auth columns exist on the users table.
-    All other tables (chat_history, user_preferences, search_history)
-    already exist in the database with their own schema.
-    """
+    # Ensure required auth columns exist on the users table.
+    # All other tables (chat_history, user_preferences, search_history) already exist in the database with their own schema
     conn = get_connection()
     cur = conn.cursor()
 
@@ -51,17 +48,13 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("   ✅ Database schema verified.")
+    print("Database schema verified.")
 
 
-# ==========================================
 # AUTHENTICATION
-# ==========================================
 def register_user(username, email, password):
-    """
-    Register a new user.
-    Returns (user_dict, None) on success, or (None, error_message) on failure.
-    """
+    # Register a new user.
+    # Returns (user_dict, None) on success or (None, error_message) on failure
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
@@ -93,7 +86,7 @@ def register_user(username, email, password):
 
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Register Error] {e}")
+        print(f"[DB Register Error] {e}")
         return None, f"Registration failed: {str(e)}"
     finally:
         cur.close()
@@ -101,10 +94,8 @@ def register_user(username, email, password):
 
 
 def login_user(username, password):
-    """
-    Authenticate a user.
-    Returns (user_dict, None) on success, or (None, error_message) on failure.
-    """
+    # Authenticate a user.
+    # Returns (user_dict, None) on success or (None, error_message) on failure
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
@@ -136,20 +127,18 @@ def login_user(username, password):
         }, None
 
     except Exception as e:
-        print(f"   ❌ [DB Login Error] {e}")
+        print(f"[DB Login Error] {e}")
         return None, f"Login failed: {str(e)}"
     finally:
         cur.close()
         conn.close()
 
 
-# ==========================================
 # CHAT HISTORY
 # Actual table schema:
 #   message_id SERIAL PK, user_id, session_id, role, message, timestamp, tokens_used
-# ==========================================
 def save_chat_message(user_id, role, content, session_id=None):
-    """Save a single chat message to the chat_history table."""
+    # Save a single chat message to the chat_history table
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -160,17 +149,15 @@ def save_chat_message(user_id, role, content, session_id=None):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Chat Save Error] {e}")
+        print(f"[DB Chat Save Error] {e}")
     finally:
         cur.close()
         conn.close()
 
 
 def get_chat_history(user_id, limit=10):
-    """
-    Retrieve last N chat messages for a user.
-    Returns list of {"role": ..., "content": ...} in chronological order.
-    """
+    # Retrieve last N chat messages for a user
+    # Returns list of {"role": ..., "content": ...} in chronological order
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
@@ -184,7 +171,7 @@ def get_chat_history(user_id, limit=10):
         # Reverse to get chronological order
         return [{"role": r['role'], "content": r['message']} for r in reversed(rows)]
     except Exception as e:
-        print(f"   ❌ [DB Chat Load Error] {e}")
+        print(f"[DB Chat Load Error] {e}")
         return []
     finally:
         cur.close()
@@ -192,7 +179,7 @@ def get_chat_history(user_id, limit=10):
 
 
 def clear_chat_history(user_id):
-    """Clear all chat history for a user."""
+    # Clear all chat history for a user.
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -200,25 +187,20 @@ def clear_chat_history(user_id):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Chat Clear Error] {e}")
+        print(f"[DB Chat Clear Error] {e}")
     finally:
         cur.close()
         conn.close()
 
 
-# ==========================================
+
 # USER PREFERENCES (PostgreSQL-backed)
 # Actual table schema (single row per user with JSONB columns):
 #   user_id PK, student_status, price_preference, budget_max,
 #   favorite_vibes (jsonb), favorite_cuisines (jsonb),
 #   dietary_restrictions (jsonb), allergens (jsonb),
 #   preferred_location, last_updated
-# ==========================================
 def save_preference(user_id, pref_key, pref_value):
-    """
-    Save a single preference from chatbot conversation.
-    Maps chatbot keys to the actual DB columns.
-    """
     # Map chatbot preference keys to actual DB JSONB columns
     KEY_MAP = {
         "diet": "dietary_restrictions",
@@ -231,7 +213,7 @@ def save_preference(user_id, pref_key, pref_value):
 
     db_column = KEY_MAP.get(pref_key)
     if not db_column:
-        print(f"   ⚠️ [Pref] Unknown preference key: {pref_key}, skipping.")
+        print(f"[Pref] Unknown preference key: {pref_key}, skipping.")
         return
 
     conn = get_connection()
@@ -259,20 +241,18 @@ def save_preference(user_id, pref_key, pref_value):
             """, (pref_value, datetime.now(), user_id))
 
         conn.commit()
-        print(f"   [Memory] Saved {pref_key} → {db_column}: {pref_value} for user {user_id}")
+        print(f"[Memory] Saved {pref_key} → {db_column}: {pref_value} for user {user_id}")
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Pref Save Error] {e}")
+        print(f"[DB Pref Save Error] {e}")
     finally:
         cur.close()
         conn.close()
 
 
 def get_preferences(user_id):
-    """
-    Load all preferences for a user.
-    Returns dict like: {"diet": ["halal"], "allergy": ["peanuts"], "cuisine": ["Japanese"], ...}
-    """
+    # Load all preferences for a user.
+    # Returns dict like: {"diet": ["halal"], "allergy": ["peanuts"], "cuisine": ["Japanese"], ...}
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
@@ -301,7 +281,7 @@ def get_preferences(user_id):
 
         return prefs
     except Exception as e:
-        print(f"   ❌ [DB Pref Load Error] {e}")
+        print(f"[DB Pref Load Error] {e}")
         return {}
     finally:
         cur.close()
@@ -309,13 +289,11 @@ def get_preferences(user_id):
 
 
 def save_preferences_bulk(user_id, prefs_dict):
-    """
-    Replace all preferences for a user from the settings page.
-    prefs_dict format from frontend:
-      {"allergy": ["nuts", "seafood"], "cuisine": ["Japanese", "Malay"],
-       "diet": ["Halal"], "budget": ["$10-$20"], "spice": ["Mild"],
-       "location": ["Ang Mo Kio"], "notes": ["I love desserts"]}
-    """
+    # Replace all preferences for a user from the settings page.
+    # prefs_dict format from frontend:
+    #  {"allergy": ["nuts", "seafood"], "cuisine": ["Japanese", "Malay"],
+    #   "diet": ["Halal"], "budget": ["$10-$20"], "spice": ["Mild"],
+    #   "location": ["Ang Mo Kio"], "notes": ["I love desserts"]}
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -346,17 +324,17 @@ def save_preferences_bulk(user_id, prefs_dict):
         """, (allergens, cuisines, diet, vibes, location, budget, datetime.now(), user_id))
 
         conn.commit()
-        print(f"   [Memory] Saved all preferences for user {user_id}")
+        print(f"[Memory] Saved all preferences for user {user_id}")
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Bulk Pref Save Error] {e}")
+        print(f"[DB Bulk Pref Save Error] {e}")
     finally:
         cur.close()
         conn.close()
 
 
 def is_onboarding_complete(user_id):
-    """Check if the user has completed onboarding."""
+    # Check if the user has completed onboarding
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -364,7 +342,7 @@ def is_onboarding_complete(user_id):
         row = cur.fetchone()
         return row[0] if row else False
     except Exception as e:
-        print(f"   ❌ [DB Onboarding Check Error] {e}")
+        print(f"[DB Onboarding Check Error] {e}")
         return False
     finally:
         cur.close()
@@ -372,7 +350,7 @@ def is_onboarding_complete(user_id):
 
 
 def set_onboarding_complete(user_id):
-    """Mark the user's onboarding as complete."""
+    # Mark the user's onboarding as complete
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -380,19 +358,18 @@ def set_onboarding_complete(user_id):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Onboarding Set Error] {e}")
+        print(f"[DB Onboarding Set Error] {e}")
     finally:
         cur.close()
         conn.close()
 
 
-# ==========================================
 # SEARCH HISTORY
 # Actual table schema:
 #   search_id SERIAL PK, user_id, search_query, search_type, results_count, searched_at
-# ==========================================
+
 def save_search(user_id, query, search_type="chatbot", results_count=0):
-    """Log a search query."""
+    # Log a search query.
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -403,7 +380,7 @@ def save_search(user_id, query, search_type="chatbot", results_count=0):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Search Save Error] {e}")
+        print(f"[DB Search Save Error] {e}")
     finally:
         cur.close()
         conn.close()

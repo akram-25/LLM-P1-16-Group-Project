@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FoodKaki Bot 🍜</title>
+    <title>Food Chatbot</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
@@ -107,7 +107,6 @@
             scroll-behavior: smooth;
         }
 
-        /* Hide scrollbar for Chrome, Safari and Opera */
         .chat-messages::-webkit-scrollbar {
             width: 6px;
         }
@@ -125,10 +124,9 @@
             padding: 14px 18px;
             border-radius: 20px;
             font-size: 0.95rem;
-            line-height: 1.5; /* Tightened from 1.6 */
+            line-height: 1.5;
             animation: fadeIn 0.3s cubic-bezier(0.39, 0.575, 0.565, 1);
             box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-            /* Removed white-space: pre-wrap from here */
         }
 
         .user-message {
@@ -136,7 +134,7 @@
             color: white;
             align-self: flex-end;
             border-bottom-right-radius: 4px;
-            white-space: pre-wrap; /* Keep this ONLY for the user's raw text */
+            white-space: pre-wrap;
         }
 
         .bot-message {
@@ -145,17 +143,16 @@
             align-self: flex-start;
             border-bottom-left-radius: 4px;
             border: 1px solid #f0f0f0;
-            white-space: normal; /* Let the Markdown HTML handle its own spacing */
+            white-space: normal;
         }
 
-        /* --- MARKDOWN SPACING FIXES --- */
         .bot-message p {
             margin-top: 0;
-            margin-bottom: 10px; /* Small gap between paragraphs */
+            margin-bottom: 10px;
         }
         
         .bot-message p:last-child {
-            margin-bottom: 0; /* Removes extra space at the very bottom of the bubble */
+            margin-bottom: 0;
         }
 
         .bot-message ul, .bot-message ol {
@@ -165,13 +162,12 @@
         }
 
         .bot-message li {
-            margin-bottom: 4px; /* Tighter spacing between bullet points */
+            margin-bottom: 4px;
         }
         
         .bot-message strong {
-            color: #1a202c; /* Makes bold text slightly darker/crisper */
+            color: #1a202c;
         }
-        /* ------------------------------ */
 
         .history-divider {
             text-align: center;
@@ -250,15 +246,13 @@
             transform: translateY(0);
         }
 
-        /* SVG Send Icon */
         .send-icon {
             width: 20px;
             height: 20px;
             fill: white;
-            margin-left: 2px; /* Visual balance for the paper plane */
+            margin-left: 2px;
         }
 
-        /* Animated Typing Indicator */
         .typing-indicator {
             display: none;
             background-color: #ffffff;
@@ -295,7 +289,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Mobile Adjustments */
         @media (max-width: 500px) {
             .chat-container {
                 height: 100vh;
@@ -314,7 +307,7 @@
 <div class="chat-container">
     <div class="chat-header">
         <div class="chat-header-left">
-            <span>🍜</span> FoodKaki
+            <span>🍜</span> Food Chatbot
         </div>
         <div class="chat-header-right">
             <span class="user-badge" id="user-badge">Loading...</span>
@@ -391,11 +384,11 @@
 
         if (message === "") return;
 
-        // 1. Show user message
+        // Show user message
         appendMessage(message, "user-message");
         inputField.value = ""; 
 
-        // 2. Show typing indicator while we wait for the first token
+        // Show typing indicator while we wait for the first token
         chatBox.appendChild(typingIndicator);
         typingIndicator.style.display = "block";
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -407,17 +400,15 @@
                 body: JSON.stringify({ message: message })
             });
 
-            // 3. The connection is made! Hide the bouncing dots.
             typingIndicator.style.display = "none";
 
             if (!response.ok) throw new Error("Server Error");
 
-            // 4. Create an empty bubble for the bot's incoming text
+            // Create an empty bubble for the bot's incoming text
             const msgDiv = document.createElement("div");
             msgDiv.classList.add("message", "bot-message");
             chatBox.insertBefore(msgDiv, typingIndicator);
 
-            // 5. Read the stream chunk-by-chunk!
             const reader = response.body.getReader();
             const decoder = new TextDecoder("utf-8");
             let fullText = "";
@@ -426,10 +417,10 @@
                 const { done, value } = await reader.read();
                 if (done) break;
                 
-                // Decode the chunk and add it to our full text
+                // Decode the chunk and add it to the full text
                 fullText += decoder.decode(value, { stream: true });
                 
-                // Parse the accumulated text into beautiful HTML
+                // Parse the accumulated text into HTML
                 msgDiv.innerHTML = marked.parse(fullText);
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
@@ -445,7 +436,7 @@
         const msgDiv = document.createElement("div");
         msgDiv.classList.add("message", className);
         
-        // Render Markdown for the bot, keep plain text for the user
+        // RMarkdown for the bot, plain text for the user
         if (className === "bot-message") {
             msgDiv.innerHTML = marked.parse(text);
         } else {
