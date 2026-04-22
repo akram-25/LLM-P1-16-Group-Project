@@ -191,6 +191,24 @@
             display: block;
         }
 
+        .form-group input.invalid {
+            border-color: #ef4444;
+            background-color: #fff8f8;
+        }
+        .form-group input.valid {
+            border-color: #22c55e;
+        }
+        .field-error {
+            font-size: 0.78rem;
+            color: #ef4444;
+            margin-top: 5px;
+            padding-left: 4px;
+            display: none;
+        }
+        .field-error.visible {
+            display: block;
+        }
+
         .features {
             margin-top: 25px;
             padding: 20px;
@@ -263,14 +281,16 @@
     <div class="form-container">
         <div class="form-panel active" id="login-panel">
             <div class="message" id="login-msg"></div>
-            <form onsubmit="handleLogin(event)">
+            <form onsubmit="handleLogin(event)" novalidate>
                 <div class="form-group">
                     <label>Username</label>
-                    <input type="text" id="login-username" required placeholder="Enter your username" autocomplete="username">
+                    <input type="text" id="login-username" placeholder="Enter your username" autocomplete="username">
+                    <span class="field-error" id="login-username-err"></span>
                 </div>
                 <div class="form-group">
                     <label>Password</label>
-                    <input type="password" id="login-password" required placeholder="Enter your password" autocomplete="current-password">
+                    <input type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password">
+                    <span class="field-error" id="login-password-err"></span>
                 </div>
                 <button type="submit" class="submit-btn" id="login-btn">Login</button>
             </form>
@@ -278,22 +298,26 @@
 
         <div class="form-panel" id="register-panel">
             <div class="message" id="register-msg"></div>
-            <form onsubmit="handleRegister(event)">
+            <form onsubmit="handleRegister(event)" novalidate>
                 <div class="form-group">
                     <label>Username</label>
-                    <input type="text" id="reg-username" required placeholder="Choose a username" minlength="3" autocomplete="username">
+                    <input type="text" id="reg-username" placeholder="3–20 chars, letters/numbers/underscores" autocomplete="username">
+                    <span class="field-error" id="reg-username-err"></span>
                 </div>
                 <div class="form-group">
                     <label>Email</label>
-                    <input type="email" id="reg-email" required placeholder="you@example.com" autocomplete="email">
+                    <input type="email" id="reg-email" placeholder="you@example.com" autocomplete="email">
+                    <span class="field-error" id="reg-email-err"></span>
                 </div>
                 <div class="form-group">
                     <label>Password</label>
-                    <input type="password" id="reg-password" required placeholder="Min. 6 characters" minlength="6" autocomplete="new-password">
+                    <input type="password" id="reg-password" placeholder="Min. 6 characters" autocomplete="new-password">
+                    <span class="field-error" id="reg-password-err"></span>
                 </div>
                 <div class="form-group">
                     <label>Confirm Password</label>
-                    <input type="password" id="reg-confirm" required placeholder="Re-enter password" minlength="6" autocomplete="new-password">
+                    <input type="password" id="reg-confirm" placeholder="Re-enter password" autocomplete="new-password">
+                    <span class="field-error" id="reg-confirm-err"></span>
                 </div>
                 <button type="submit" class="submit-btn" id="reg-btn">Create Account</button>
             </form>
@@ -315,6 +339,87 @@
 </div>
 
 <script>
+    // ── Validation rules ──────────────────────────────────────────────────────
+    const RULES = {
+        username: {
+            test: v => /^[a-zA-Z0-9_]{3,20}$/.test(v),
+            message: 'Username must be 3–20 characters (letters, numbers, underscores only)'
+        },
+        email: {
+            test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+            message: 'Please enter a valid email address'
+        },
+        password: {
+            test: v => v.length >= 6 && v.length <= 128,
+            message: 'Password must be 6–128 characters'
+        }
+    };
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function setFieldState(inputId, errId, errorMsg) {
+        const input = document.getElementById(inputId);
+        const err   = document.getElementById(errId);
+        if (errorMsg) {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            err.textContent = errorMsg;
+            err.classList.add('visible');
+        } else {
+            input.classList.remove('invalid');
+            input.classList.add('valid');
+            err.textContent = '';
+            err.classList.remove('visible');
+        }
+        return !errorMsg;
+    }
+
+    function clearFieldState(inputId, errId) {
+        const input = document.getElementById(inputId);
+        const err   = document.getElementById(errId);
+        input.classList.remove('invalid', 'valid');
+        err.textContent = '';
+        err.classList.remove('visible');
+    }
+
+    function showMessage(elementId, text, type) {
+        const el = document.getElementById(elementId);
+        el.textContent = text;
+        el.className = `message ${type}`;
+    }
+
+    // ── Real-time validation listeners ────────────────────────────────────────
+    document.getElementById('reg-username').addEventListener('input', function () {
+        if (!this.value) { clearFieldState('reg-username', 'reg-username-err'); return; }
+        setFieldState('reg-username', 'reg-username-err',
+            RULES.username.test(this.value.trim()) ? null : RULES.username.message);
+    });
+
+    document.getElementById('reg-email').addEventListener('input', function () {
+        if (!this.value) { clearFieldState('reg-email', 'reg-email-err'); return; }
+        setFieldState('reg-email', 'reg-email-err',
+            RULES.email.test(this.value.trim()) ? null : RULES.email.message);
+    });
+
+    document.getElementById('reg-password').addEventListener('input', function () {
+        if (!this.value) { clearFieldState('reg-password', 'reg-password-err'); return; }
+        setFieldState('reg-password', 'reg-password-err',
+            RULES.password.test(this.value) ? null : RULES.password.message);
+        // Re-check confirm if already touched
+        const confirm = document.getElementById('reg-confirm');
+        if (confirm.value) {
+            setFieldState('reg-confirm', 'reg-confirm-err',
+                this.value === confirm.value ? null : 'Passwords do not match');
+        }
+    });
+
+    document.getElementById('reg-confirm').addEventListener('input', function () {
+        if (!this.value) { clearFieldState('reg-confirm', 'reg-confirm-err'); return; }
+        const password = document.getElementById('reg-password').value;
+        setFieldState('reg-confirm', 'reg-confirm-err',
+            this.value === password ? null : 'Passwords do not match');
+    });
+
+    // ── Tab switcher ──────────────────────────────────────────────────────────
     function switchTab(tab) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.form-panel').forEach(p => p.classList.remove('active'));
@@ -330,23 +435,26 @@
         document.getElementById('register-msg').className = 'message';
     }
 
-    function showMessage(elementId, text, type) {
-        const el = document.getElementById(elementId);
-        el.textContent = text;
-        el.className = `message ${type}`;
-    }
-
+    // ── Login submit ──────────────────────────────────────────────────────────
     async function handleLogin(e) {
         e.preventDefault();
-        const btn = document.getElementById('login-btn');
-        btn.disabled = true;
-        btn.textContent = 'Logging in...';
 
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
 
+        // Basic presence checks
+        const uOk = setFieldState('login-username', 'login-username-err',
+            username ? null : 'Username is required');
+        const pOk = setFieldState('login-password', 'login-password-err',
+            password ? null : 'Password is required');
+        if (!uOk || !pOk) return;
+
+        const btn = document.getElementById('login-btn');
+        btn.disabled = true;
+        btn.textContent = 'Logging in...';
+
         try {
-            const res = await fetch('/auth/login', {
+            const res  = await fetch('/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -359,35 +467,50 @@
             } else {
                 showMessage('login-msg', data.error || 'Login failed', 'error');
             }
-        } catch (err) {
+        } catch {
             showMessage('login-msg', 'Could not connect to server', 'error');
         } finally {
-            if(!document.getElementById('login-msg').classList.contains('success')) {
+            if (!document.getElementById('login-msg').classList.contains('success')) {
                 btn.disabled = false;
                 btn.textContent = 'Login';
             }
         }
     }
 
+    // ── Register submit ───────────────────────────────────────────────────────
     async function handleRegister(e) {
         e.preventDefault();
-        const btn = document.getElementById('reg-btn');
 
         const username = document.getElementById('reg-username').value.trim();
-        const email = document.getElementById('reg-email').value.trim();
+        const email    = document.getElementById('reg-email').value.trim();
         const password = document.getElementById('reg-password').value;
-        const confirm = document.getElementById('reg-confirm').value;
+        const confirm  = document.getElementById('reg-confirm').value;
 
-        if (password !== confirm) {
-            showMessage('register-msg', 'Passwords do not match', 'error');
-            return;
-        }
+        // Run all field validations and collect results
+        const uOk = setFieldState('reg-username', 'reg-username-err',
+            !username                          ? 'Username is required' :
+            !RULES.username.test(username)     ? RULES.username.message : null);
 
+        const eOk = setFieldState('reg-email', 'reg-email-err',
+            !email                             ? 'Email is required' :
+            !RULES.email.test(email)           ? RULES.email.message : null);
+
+        const pOk = setFieldState('reg-password', 'reg-password-err',
+            !password                          ? 'Password is required' :
+            !RULES.password.test(password)     ? RULES.password.message : null);
+
+        const cOk = setFieldState('reg-confirm', 'reg-confirm-err',
+            !confirm                           ? 'Please confirm your password' :
+            confirm !== password               ? 'Passwords do not match' : null);
+
+        if (!uOk || !eOk || !pOk || !cOk) return;
+
+        const btn = document.getElementById('reg-btn');
         btn.disabled = true;
         btn.textContent = 'Creating account...';
 
         try {
-            const res = await fetch('/auth/register', {
+            const res  = await fetch('/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, email, password })
@@ -400,10 +523,10 @@
             } else {
                 showMessage('register-msg', data.error || 'Registration failed', 'error');
             }
-        } catch (err) {
+        } catch {
             showMessage('register-msg', 'Could not connect to server', 'error');
         } finally {
-            if(!document.getElementById('register-msg').classList.contains('success')) {
+            if (!document.getElementById('register-msg').classList.contains('success')) {
                 btn.disabled = false;
                 btn.textContent = 'Create Account';
             }

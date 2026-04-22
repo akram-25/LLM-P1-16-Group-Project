@@ -1,4 +1,5 @@
 import os
+import re
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, Response, stream_with_context
 import chatbot_main as bot
 import db
@@ -32,8 +33,14 @@ def register():
     if not username or not email or not password:
         return jsonify({"success": False, "error": "All fields are required"})
 
-    if len(password) < 6:
-        return jsonify({"success": False, "error": "Password must be at least 6 characters"})
+    if not re.match(r'^[a-zA-Z0-9_]{3,20}$', username):
+        return jsonify({"success": False, "error": "Username must be 3–20 characters and contain only letters, numbers, and underscores"})
+
+    if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return jsonify({"success": False, "error": "Please enter a valid email address"})
+
+    if len(password) < 6 or len(password) > 128:
+        return jsonify({"success": False, "error": "Password must be 6–128 characters"})
 
     user, error = db.register_user(username, email, password)
 
@@ -55,6 +62,9 @@ def login():
 
     if not username or not password:
         return jsonify({"success": False, "error": "Username and password are required"})
+
+    if len(username) > 20 or len(password) > 128:
+        return jsonify({"success": False, "error": "Invalid credentials"})
 
     user, error = db.login_user(username, password)
 
