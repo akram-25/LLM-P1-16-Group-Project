@@ -37,6 +37,17 @@ def init_db():
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;")
 
+    # Create user_favorites table if it doesn't exist
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_favorites (
+            favorite_id SERIAL PRIMARY KEY,
+            user_id     VARCHAR(255) NOT NULL,
+            restaurant_name VARCHAR(255) NOT NULL,
+            saved_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, restaurant_name)
+        );
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -393,6 +404,55 @@ def save_search(user_id, query, search_type="chatbot", results_count=0):
     except Exception as e:
         conn.rollback()
         print(f"   ❌ [DB Search Save Error] {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ==========================================
+# USER FAVORITES
+# ==========================================
+def save_favorite(user_id, restaurant_name):
+    """
+    Save a restaurant to the user's favourites.
+    Silently ignores duplicates (UNIQUE constraint).
+    Returns True if newly saved, False if already existed.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO user_favorites (user_id, restaurant_name, saved_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, restaurant_name) DO NOTHING
+        """, (user_id, restaurant_name, datetime.now()))
+        saved = cur.rowcount > 0
+        conn.commit()
+        print(f"   [Favourites] {'Saved' if saved else 'Already saved'}: {restaurant_name} for user {user_id}")
+        return saved
+    except Exception as e:
+        conn.rollback()
+        print(f"   ❌ [DB Favourites Save Error] {e}")
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_favorites(user_id):
+    """Return a list of saved restaurant names for a user, newest first."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("""
+            SELECT restaurant_name, saved_at FROM user_favorites
+            WHERE user_id = %s
+            ORDER BY saved_at DESC
+        """, (user_id,))
+        return [{"restaurant_name": r["restaurant_name"], "saved_at": str(r["saved_at"])} for r in cur.fetchall()]
+    except Exception as e:
+        print(f"   ❌ [DB Favourites Load Error] {e}")
+        return []
     finally:
         cur.close()
         conn.close()

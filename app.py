@@ -259,6 +259,31 @@ def chat():
                     # Fake a stream for static text
                     stream_source = ["Eh, I cannot save preferences for guest users lah. Create an account first!"]
 
+            elif intent == "LIVE_SEARCH":
+                query = decision.get("query", user_input)
+                web_result = bot.search_live_web(query)
+                live_context = [{"name": "Live Web Search", "description": web_result}]
+                stream_source = bot.generate_response_with_history(
+                    user_input, chat_history, context_data=live_context, user_profile=user_profile
+                )
+
+            elif intent == "SAVE_FAVORITE":
+                restaurant_name = decision.get("restaurant_name", "").strip()
+                if is_guest:
+                    stream_source = ["Eh, I cannot save favourites for guest users lah. Create an account first!"]
+                elif not restaurant_name:
+                    stream_source = ["Hmm, I not sure which restaurant you want to save leh. Can you tell me the name again?"]
+                else:
+                    already_saved = not db.save_favorite(user_id, restaurant_name)
+                    if already_saved:
+                        note = f"[SYSTEM NOTE: The user asked to save '{restaurant_name}' but it is already in their favourites. Let them know in Singlish. Keep it short.]"
+                    else:
+                        note = f"[SYSTEM NOTE: You just saved '{restaurant_name}' to the user's favourites. Confirm this naturally in Singlish. Keep it short — 1-2 sentences.]"
+                    chat_history_with_note = chat_history + [{"role": "system", "content": note}]
+                    stream_source = bot.generate_response_with_history(
+                        user_input, chat_history_with_note, user_profile=user_profile
+                    )
+
             elif intent == "BLOCK":
                 stream_source = ["Walao, I am a food chatbot leh. Ask me about food only. Don't ask me random things."]
 
