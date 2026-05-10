@@ -1,8 +1,10 @@
 import os
 import json
 import uuid
+import threading
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
@@ -17,37 +19,97 @@ DB_CONFIG = {
     'port': int(os.getenv('POSTGRES_PORT', 5432))
 }
 
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = psycopg2.pool.ThreadedConnectionPool(minconn=2, maxconn=10, **DB_CONFIG)
+    return _pool
+
 
 def get_connection():
-    # Get a new PostgreSQL connection
-    return psycopg2.connect(**DB_CONFIG)
+    return _get_pool().getconn()
+
+
+def release_connection(conn):
+    _get_pool().putconn(conn)
 
 
 def init_db():
-    # Ensure required auth columns exist on the users table.
-    # All other tables (chat_history, user_preferences, search_history) already exist in the database with their own schema
     conn = get_connection()
     cur = conn.cursor()
 
-    # Add auth columns to users table if missing
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id            VARCHAR(255) PRIMARY KEY,
+            username           VARCHAR(255) UNIQUE NOT NULL,
+            email              VARCHAR(255) UNIQUE NOT NULL,
+            password_hash      VARCHAR(255),
+            created_at         TIMESTAMP,
+            last_login         TIMESTAMP,
+            last_active        TIMESTAMP,
+            onboarding_complete BOOLEAN DEFAULT FALSE
+        );
+    """)
 
-    # Create user_favorites table if it doesn't exist
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chat_history (
+            message_id SERIAL PRIMARY KEY,
+            user_id    VARCHAR(255),
+            session_id VARCHAR(255),
+            role       VARCHAR(50),
+            message    TEXT,
+            timestamp  TIMESTAMP
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id               VARCHAR(255) PRIMARY KEY,
+            price_preference      TEXT,
+            preferred_location    TEXT,
+            favorite_vibes        JSONB,
+            favorite_cuisines     JSONB,
+            dietary_restrictions  JSONB,
+            allergens             JSONB,
+            last_updated          TIMESTAMP
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS search_history (
+            search_id     SERIAL PRIMARY KEY,
+            user_id       VARCHAR(255),
+            search_query  TEXT,
+            search_type   VARCHAR(50),
+            results_count INTEGER,
+            searched_at   TIMESTAMP
+        );
+    """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_favorites (
-            favorite_id SERIAL PRIMARY KEY,
-            user_id     VARCHAR(255) NOT NULL,
+            favorite_id     SERIAL PRIMARY KEY,
+            user_id         VARCHAR(255) NOT NULL,
             restaurant_name VARCHAR(255) NOT NULL,
-            saved_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+            saved_at        TIMESTAMP NOT NULL DEFAULT NOW(),
             UNIQUE (user_id, restaurant_name)
         );
     """)
 
+    # Add columns that may be missing on pre-existing databases
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;")
+
     conn.commit()
     cur.close()
-    conn.close()
+    release_connection(conn)
     print("Database schema verified.")
 
 
@@ -90,7 +152,7 @@ def register_user(username, email, password):
         return None, f"Registration failed: {str(e)}"
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def login_user(username, password):
@@ -131,7 +193,7 @@ def login_user(username, password):
         return None, f"Login failed: {str(e)}"
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 # CHAT HISTORY
@@ -152,7 +214,7 @@ def save_chat_message(user_id, role, content, session_id=None):
         print(f"[DB Chat Save Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def get_chat_history(user_id, limit=10):
@@ -175,7 +237,7 @@ def get_chat_history(user_id, limit=10):
         return []
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def clear_chat_history(user_id):
@@ -190,7 +252,7 @@ def clear_chat_history(user_id):
         print(f"[DB Chat Clear Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 
@@ -247,7 +309,7 @@ def save_preference(user_id, pref_key, pref_value):
         print(f"[DB Pref Save Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def get_preferences(user_id):
@@ -285,7 +347,7 @@ def get_preferences(user_id):
         return {}
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def save_preferences_bulk(user_id, prefs_dict):
@@ -330,7 +392,7 @@ def save_preferences_bulk(user_id, prefs_dict):
         print(f"[DB Bulk Pref Save Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def is_onboarding_complete(user_id):
@@ -346,7 +408,7 @@ def is_onboarding_complete(user_id):
         return False
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def set_onboarding_complete(user_id):
@@ -361,7 +423,7 @@ def set_onboarding_complete(user_id):
         print(f"[DB Onboarding Set Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 # SEARCH HISTORY
@@ -383,7 +445,7 @@ def save_search(user_id, query, search_type="chatbot", results_count=0):
         print(f"[DB Search Save Error] {e}")
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 # ==========================================
@@ -413,7 +475,7 @@ def save_favorite(user_id, restaurant_name):
         return False
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
 
 
 def get_favorites(user_id):
@@ -432,4 +494,4 @@ def get_favorites(user_id):
         return []
     finally:
         cur.close()
-        conn.close()
+        release_connection(conn)
