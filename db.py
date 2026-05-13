@@ -115,7 +115,7 @@ def init_db():
 
 # AUTHENTICATION
 def register_user(username, email, password):
-    # Register a new user.
+    # Register a new user
     # Returns (user_dict, None) on success or (None, error_message) on failure
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -156,7 +156,7 @@ def register_user(username, email, password):
 
 
 def login_user(username, password):
-    # Authenticate a user.
+    # Authenticate a user
     # Returns (user_dict, None) on success or (None, error_message) on failure
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -241,7 +241,7 @@ def get_chat_history(user_id, limit=10):
 
 
 def clear_chat_history(user_id):
-    # Clear all chat history for a user.
+    # Clear all chat history for a user
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -313,8 +313,8 @@ def save_preference(user_id, pref_key, pref_value):
 
 
 def get_preferences(user_id):
-    # Load all preferences for a user.
-    # Returns dict like: {"diet": ["halal"], "allergy": ["peanuts"], "cuisine": ["Japanese"], ...}
+    # Load all preferences for a user
+    # Returns dict like: {"diet": ["halal"], "allergy": ["peanuts"], "cuisine": ["Japanese"]}
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
@@ -351,7 +351,7 @@ def get_preferences(user_id):
 
 
 def save_preferences_bulk(user_id, prefs_dict):
-    # Replace all preferences for a user from the settings page.
+    # Replace all preferences for a user from the settings page
     # prefs_dict format from frontend:
     #  {"allergy": ["nuts", "seafood"], "cuisine": ["Japanese", "Malay"],
     #   "diet": ["Halal"], "budget": ["$10-$20"], "spice": ["Mild"],
@@ -448,9 +448,7 @@ def save_search(user_id, query, search_type="chatbot", results_count=0):
         release_connection(conn)
 
 
-# ==========================================
 # USER FAVORITES
-# ==========================================
 def save_favorite(user_id, restaurant_name):
     """
     Save a restaurant to the user's favourites.
