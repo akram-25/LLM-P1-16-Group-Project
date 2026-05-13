@@ -469,7 +469,7 @@ def save_favorite(user_id, restaurant_name):
         return saved
     except Exception as e:
         conn.rollback()
-        print(f"   ❌ [DB Favourites Save Error] {e}")
+        print(f"[DB Favourites Save Error] {e}")
         return False
     finally:
         cur.close()
@@ -488,7 +488,7 @@ def get_favorites(user_id):
         """, (user_id,))
         return [{"restaurant_name": r["restaurant_name"], "saved_at": str(r["saved_at"])} for r in cur.fetchall()]
     except Exception as e:
-        print(f"   ❌ [DB Favourites Load Error] {e}")
+        print(f"[DB Favourites Load Error] {e}")
         return []
     finally:
         cur.close()
